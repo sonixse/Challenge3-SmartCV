@@ -1,0 +1,16 @@
+# frameworks, libraries, and models
+gradio
+groq
+python-dotenv
+pydantic
+langgraph
+chromadb
+
+# for BGE embeddings
+sentence-transformers
+
+# .pdf text extraction
+pypdf
+
+# local llama3
+ollama
