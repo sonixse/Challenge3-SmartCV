@@ -318,6 +318,11 @@ Jobs makes the system valuable to *candidates*, not just recruiters. This turns 
 
 ---
 
+## Download external resume data
+
+* https://www.kaggle.com/datasets/snehaanbhawal/resume-dataset
+* Place files in `data/kaggle/` once out of `data/`
+
 ## The Team
 
 Five people, two tracks, one system.
