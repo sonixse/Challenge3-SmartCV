@@ -1,7 +1,7 @@
 # Data
-data/chroma/
 data/kaggle/
 data/raw/
+data/chroma/
 
 # Python
 __pycache__/
