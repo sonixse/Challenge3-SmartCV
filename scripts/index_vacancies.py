@@ -4,6 +4,14 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 # run with `python scripts/index_vacancies.py` from root project folder
 
+""" 
+Indexes all vacancies into ChromaDB so Alan Turing can query them at match time
+(it queries this collection with a candidate's CV text)
+
+Each vacancy is converted into a text string, BGE turns it into a meaning-vector,
+and ChromaDB stores both. Ready for nearest-neighbour closest match search.
+"""
+
 from src.data.load_vacancies import load
 import chromadb
 from chromadb.utils import embedding_functions
@@ -15,7 +23,8 @@ _, vacancies = load()
 
 client = chromadb.PersistentClient(path="data/chroma")
 ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name="BAAI/bge-small-en-v1.5" # for prod use "BAAI/bge-base-en-v1.5"
+    model_name="BAAI/bge-small-en-v1.5", # for prod use "BAAI/bge-base-en-v1.5"
+    normalize_embeddings=True
 )
 
 collection = client.get_or_create_collection(
@@ -28,7 +37,6 @@ if collection.count() == len(vacancies):
     exit(0)
 
 # index each vacancy: build a text to embed, plus metadata
-
 for i, vac in enumerate(vacancies):
 
     # Natural language text to embed
@@ -42,7 +50,6 @@ for i, vac in enumerate(vacancies):
         f"Skills: {skill_text}. "
         f"Tools: {tool_text}. "
     )
-
     
     collection.add(
         ids=[str(i)],
@@ -58,14 +65,3 @@ for i, vac in enumerate(vacancies):
     )
 
 print(f"Indexed {len(vacancies)} vacancies")
-
-
-""" 
-RELEVANT INFO 
-
-Indexes all vacancies into ChromaDB so Alan Turing can query them at match time
-(it queries this collection with a candidate's CV text)
-
-Each vacancy is converted into a text string, BGE turns it into a meaning-vector,
-and ChromaDB stores both. Ready for nearest-neighbour closest match search.
-"""

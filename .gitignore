@@ -2,6 +2,7 @@
 data/kaggle/
 data/raw/
 data/chroma/
+data/processed/
 
 # Python
 __pycache__/

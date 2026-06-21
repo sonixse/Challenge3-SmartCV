@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Literal
 
 class CandidateSkill(BaseModel):
     name: str                       # "Python", "Databases"
@@ -7,10 +7,12 @@ class CandidateSkill(BaseModel):
 
 class CandidateLanguage(BaseModel):
     language: str                   # "English", "Spanish"
-    level: str                      # CEFR: A1, A2, B1, B2, C1, C2, Native
+    level: Literal["A1", "A2", "B1", "B2", "C1", "C2", "Native"]  # CEFR or Native
 
 class CandidateProfile(BaseModel):
     name: str                       # Candidate's name (for display only)
+    location: Optional[str] = None  # City/country as stated in the CV
+    contact: Optional[str] = None   # Email (preferred) or phone number
 
     # Used by Alan Turing:
     # each skill name is embedded and compared against vacancy skills
@@ -21,7 +23,7 @@ class CandidateProfile(BaseModel):
     years_experience: int
 
     # compared against vacancy's highest_degree requirement
-    education_level: str            # "Bachelor's", "Master's", "PhD", "No degree"
+    education_level: Literal["Bachelor's", "Master's", "PhD", "No degree"]
     education_field: str            # "Computer Science", "Data Engineering"
 
     # operational constraint, not semantic
