@@ -56,16 +56,26 @@ Tool:   LLM + Pydantic validation
 
 ---
 
-### 🔵 MARIE CURIE — The Qualifier Agent
-*Marie Curie's work was built on absolute scientific rigor. Either the element was radioactive or it wasn't — no approximations, no negotiation. The first person to win two Nobel Prizes in two different sciences didn't deal in grey areas.*
+🔵 MARIE CURIE — The Qualifier Agent
 
-The Qualifier enforces must-have constraints deterministically: minimum years of experience, education level, and required languages. It runs as pure code — fast, auditable, and immune to LLM hallucination. If a vacancy requires B2 English and the candidate has A1, the answer is no. Not "probably not." No.
+Marie Curie's work was built on absolute scientific rigor. Either the element was radioactive or it wasn't — no approximations, no negotiation. The first person to win two Nobel Prizes in two different sciences didn't deal in grey areas.
+
+The Qualifier enforces must-have constraints deterministically across four rules:
+
+1. Years of experience — candidate must meet or exceed the vacancy minimum
+2. Education level — checked against a hierarchy (No degree → Bachelor's → Master's → PhD)
+3. Required languages — each language checked by name and minimum CEFR level
+4. Exact skill overlap — a soft bonus for direct name matches, before Alan Turing runs semantic comparison
+
+It runs as pure code — fast, auditable, and immune to LLM hallucination. If a vacancy requires B2 English and the candidate has A1, the answer is no. Not "probably not." No.
 
 > **Why languages go here, not in embeddings:** A semantic model might place "Catalan" near "Spanish" and grant a partial match. But language requirements are operational constraints, not fuzzy preferences. The Qualifier enforces this — which is also the ethically correct call.
 
 ```
 Input:  CandidateProfile + Vacancy requirements
-Output: Hard pass/fail flag + score penalty/bonus
+Output: pass/fail flag + score (0..4) + failed_checks list + reasons list
+        failed_checks tells Steve Jobs exactly which rules the candidate failed,
+        enabling targeted coaching instead of generic gap analysis
 Tool:   Deterministic rule engine (Python)
 ```
 

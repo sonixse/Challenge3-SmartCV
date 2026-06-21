@@ -1,8 +1,7 @@
 import gradio as gr
-from generate import model, chat, MODELS
+from generate import model, respond
 
-gpt, default_model = model()
-_, __, respond = chat(gpt, default_model)
+supported_models = model()
 
 custom_css = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -287,14 +286,14 @@ with gr.Blocks(title="Chat") as demo:
                 font-size: clamp(0.75rem, 2.5vw, 0.85rem);
                 margin: 0;
                 font-family: 'Inter', sans-serif;
-            ">Ultra-fast AI · Powered by Groq</p>
+            ">Powered by Ollama</p>
         </div>
     """)
 
     with gr.Row():
         model_selector = gr.Dropdown(
-            choices=MODELS,
-            value=MODELS[0],
+            choices=supported_models,
+            value=supported_models[0],
             label="Model",
             interactive=True,
             scale=1,
@@ -316,7 +315,7 @@ with gr.Blocks(title="Chat") as demo:
             ),
         ),
         textbox=gr.Textbox(
-            placeholder="Message Groq...",
+            placeholder="Message Ollama...",
             show_label=False,
             lines=1,
             submit_btn="Send ↑",

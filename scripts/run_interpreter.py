@@ -2,7 +2,7 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# run with `python scripts/run_interpreter.py` from root project folder
+# run with `python scripts/run_interpreter.py` from root project folder (≈ 2 min)
 
 import time
 import threading
@@ -17,7 +17,7 @@ INPUT_DIR = "data/raw"
 OLLAMA_URL = "http://127.0.0.1:11434"
 
 
-def ensure_ollama_running(timeout: int = 10) -> None: # pkill ollama to kill the process
+def ensure_ollama_running(timeout: int = 10) -> None: # `pkill ollama` to kill the process
     """Start ollama serve in the background if it is not already running."""
     try:
         urllib.request.urlopen(OLLAMA_URL, timeout=2)
