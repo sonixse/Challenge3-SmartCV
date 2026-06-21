@@ -1,5 +1,6 @@
 # frameworks, libraries, and models
 gradio
+streamlit
 groq
 python-dotenv
 pydantic
@@ -11,6 +12,9 @@ sentence-transformers
 
 # .pdf text extraction
 pypdf
+
+# .pdf -> image (card thumbnails)
+pymupdf
 
 # local llama3
 ollama

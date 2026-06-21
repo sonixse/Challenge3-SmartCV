@@ -3,6 +3,7 @@ data/kaggle/
 data/raw/
 data/chroma/
 data/processed/
+data/uploads/
 
 # Python
 __pycache__/

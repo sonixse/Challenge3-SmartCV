@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\roger\\\\Desktop\\\\hackathon-accenture\\\\Challenge3-SmartCV\" -Recurse)",
+      "Bash(Select-Object FullName)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\roger\\\\Desktop\\\\hackathon-accenture\\\\Challenge3-SmartCV\" -Recurse | ForEach-Object { $_.FullName })",
+      "PowerShell(findstr *)",
+      "Bash(\"C:\\\\Users\\\\roger\\\\Desktop\\\\hackathon-accenture\\\\venv\\\\Scripts\\\\pip.exe\" list *)",
+      "Bash(git check-ignore *)",
+      "Bash(git add *)"
+    ]
+  }
+}
