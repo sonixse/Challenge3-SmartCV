@@ -13,7 +13,7 @@ for each vacancy skill requirement:
 import sys, os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-# run from root folder: python src/agents/4_linguist.py
+# run from root folder: python src/agents/linguist.py
 
 """
 Semantic skills comparison.
