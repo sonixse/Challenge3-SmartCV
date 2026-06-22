@@ -215,7 +215,7 @@ def render_ranking(profile: CandidateProfile) -> None:
                             f"L'oferta demana parlar com a mínim {vac.required_languages} idiomes."
                         )
 
-EXAMPLES_DIR = Path("data/synth/raw")
+EXAMPLES_DIR = Path("data/raw")
 PROCESSED_DIR = Path(DEFAULT_OUTPUT_DIR)
 UPLOADS_DIR = Path("data/uploads")
 

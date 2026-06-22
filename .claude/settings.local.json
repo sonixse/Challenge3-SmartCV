@@ -15,7 +15,9 @@
       "Bash(python -m pytest tests/test_qualifier.py -v)",
       "Bash(python -c ' *)",
       "Bash(grep -v \"^\\\\s*$\\\\|^[[:space:]]*streamlit\")",
-      "Bash(grep -v \"^\\\\s*$\")"
+      "Bash(grep -v \"^\\\\s*$\")",
+      "Bash(git show *)",
+      "Bash(git rm *)"
     ]
   }
 }

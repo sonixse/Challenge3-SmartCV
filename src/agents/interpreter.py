@@ -1,9 +1,6 @@
-import sys
-import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-
 # imported by scripts/run_interpreter.py — do not run directly
 
+import os
 import json
 import re
 import time

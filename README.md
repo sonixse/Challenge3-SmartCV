@@ -56,7 +56,7 @@ Tool:   LLM + Pydantic validation
 
 ---
 
-🔵 MARIE CURIE — The Qualifier Agent
+### 🔵 MARIE CURIE — The Qualifier Agent
 
 Marie Curie's work was built on absolute scientific rigor. Either the element was radioactive or it wasn't — no approximations, no negotiation. The first person to win two Nobel Prizes in two different sciences didn't deal in grey areas.
 
@@ -258,6 +258,24 @@ Tool:   SQLite + Gradio
 
 ---
 
+## Prerequisites
+
+This project runs the LLM **locally** via [Ollama](https://ollama.com). No external API key is needed — but Ollama must be installed and running on your machine before you launch the app.
+
+1. **Install Ollama** — download from [ollama.com](https://ollama.com) and follow the instructions for your OS.
+2. **Pull the model** (one-time):
+   ```bash
+   ollama pull llama3
+   ```
+3. **Start the server** — Ollama must be running in the background whenever you use the app:
+   ```bash
+   ollama serve
+   ```
+
+> The app connects to Ollama at `localhost:11434`. If you see a connection error on startup, this is the first thing to check.
+
+---
+
 ## How to Run
 
 ```bash
@@ -266,8 +284,8 @@ git clone https://github.com/sonixse/Challenge3-SmartCV
 cd Challenge3-SmartCV
 pip install -r requirements.txt
 
-# 2. Start Ollama with Llama 3
-ollama run llama3
+# 2. Start Ollama in a separate terminal (see Prerequisites above)
+ollama serve
 
 # 3. Index the job vacancies into ChromaDB (run once)
 python scripts/index_vacancies.py
