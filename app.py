@@ -12,7 +12,7 @@ from src.agents.interpreter import (
 )
 from src.schemas.candidate import CandidateProfile
 
-EXAMPLES_DIR = Path("data/synth/raw")
+EXAMPLES_DIR = Path("data/raw")
 PROCESSED_DIR = Path(DEFAULT_OUTPUT_DIR)
 UPLOADS_DIR = Path("data/uploads")
 

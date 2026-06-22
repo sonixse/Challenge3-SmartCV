@@ -22,6 +22,12 @@ class CandidateProfile(BaseModel):
     # compared against vacancy's years_experience requirement
     years_experience: int
 
+    """
+    # TODO: add experience: list[ExperienceEntry] (role/company/duration per job)
+    # when a sector-relevance agent is built. extractor/models.py has a prior version.
+
+    """
+
     # compared against vacancy's highest_degree requirement
     education_level: Literal["Bachelor's", "Master's", "PhD", "No degree"]
     education_field: str            # "Computer Science", "Data Engineering"
