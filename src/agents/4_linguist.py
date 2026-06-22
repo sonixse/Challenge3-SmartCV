@@ -1,3 +1,15 @@
+import numpy as np
+import chromadb
+from chromadb.utils import embedding_functions
+from sentence_transformers import SentenceTransformer
+from src.schemas.candidate import CandidateProfile, CandidateSkill, CandidateLanguage
+from src.schemas.vacancy import Vacancy
+from src.data.load_vacancies import load
+
+# Linguist agent - Semantic skills comparison using BGE embeddings + ChromaDB
+
+# run from root folder: python src/agents/4_linguist.py
+
 """
 General pseudocode
 
@@ -6,16 +18,7 @@ for each vacancy skill requirement:
     compute cosine similarity against each candidate skill vector (embedded on the fly)
     take the highest similarity score
     classify: MATCH / GREY ZONE / NO MATCH
-"""
 
-# Linguist agent - Semantic skills comparison using BGE embeddings + ChromaDB
-
-import sys, os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-
-# run from root folder: python src/agents/4_linguist.py
-
-"""
 Semantic skills comparison.
 
 Two-step process:
@@ -23,15 +26,6 @@ Two-step process:
   2. Per-skill BGE -> fine-grained: for each vacancy skill, compare against all candidate skills
                         and classify as MATCH / GREY ZONE / NO MATCH
 """
-
-import numpy as np
-import chromadb
-from chromadb.utils import embedding_functions
-from sentence_transformers import SentenceTransformer
-
-from src.schemas.candidate import CandidateProfile, CandidateSkill, CandidateLanguage
-from src.schemas.vacancy import Vacancy
-from src.data.load_vacancies import load
 
 # Model (loaded once at module level)
 

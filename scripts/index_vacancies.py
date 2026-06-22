@@ -1,8 +1,8 @@
-import sys
-import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 # run with `python scripts/index_vacancies.py` from root project folder
+
+from src.data.load_vacancies import load
+import chromadb
+from chromadb.utils import embedding_functions
 
 """ 
 Indexes all vacancies into ChromaDB so Alan Turing can query them at match time
@@ -11,10 +11,6 @@ Indexes all vacancies into ChromaDB so Alan Turing can query them at match time
 Each vacancy is converted into a text string, BGE turns it into a meaning-vector,
 and ChromaDB stores both. Ready for nearest-neighbour closest match search.
 """
-
-from src.data.load_vacancies import load
-import chromadb
-from chromadb.utils import embedding_functions
 
 # load vacancies
 _, vacancies = load()

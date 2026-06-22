@@ -1,7 +1,8 @@
-# Qualifier agent - Rule based system engine: must-have filters + score
+from src.data.load_vacancies import load
+from src.schemas.candidate import CandidateProfile, CandidateSkill, CandidateLanguage
+from src.schemas.vacancy import Vacancy
 
-import sys, os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+# Qualifier agent - Rule based system engine: must-have filters + score
 
 # run from root folder: python src/agents/3_qualifier.py
 """
@@ -9,10 +10,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 2. For each vacancy, check must-have skills, years of experience, and education level
 3. Score candidates based on match
 """
-
-from src.data.load_vacancies import load
-from src.schemas.candidate import CandidateProfile, CandidateSkill, CandidateLanguage
-from src.schemas.vacancy import Vacancy
 
 # Education hierarchy: higher index means higher level
 _EDUCATION_RANK = {
