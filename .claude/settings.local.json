@@ -7,7 +7,17 @@
       "PowerShell(findstr *)",
       "Bash(\"C:\\\\Users\\\\roger\\\\Desktop\\\\hackathon-accenture\\\\venv\\\\Scripts\\\\pip.exe\" list *)",
       "Bash(git check-ignore *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git push *)",
+      "Bash(git mv *)",
+      "Bash(python -c \"from src.agents.qualifier import qualify; print\\('qualifier OK'\\)\")",
+      "Bash(python -c \"from src.agents.linguist import analyse; print\\('linguist OK'\\)\")",
+      "Bash(python -m pytest tests/test_qualifier.py -v)",
+      "Bash(python -c ' *)",
+      "Bash(grep -v \"^\\\\s*$\\\\|^[[:space:]]*streamlit\")",
+      "Bash(grep -v \"^\\\\s*$\")",
+      "Bash(git show *)",
+      "Bash(git rm *)"
     ]
   }
 }

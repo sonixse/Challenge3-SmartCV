@@ -10,7 +10,210 @@ from src.agents.interpreter import (
     load_profile,
     save_profile,
 )
+from src.agents.podium import PodiumEntry, build_entry
+from src.agents.qualifier import qualify
+from src.data.load_vacancies import load as load_vacancies
 from src.schemas.candidate import CandidateProfile
+from src.schemas.vacancy import Vacancy
+
+# Mapping del schema canònic (anglès) al vocabulari del Qualifier
+_EDU_MAP = {
+    "No degree": None,
+    "Bachelor's": "Grau",
+    "Master's": "Master",
+    "PhD": "Doctorat",
+}
+
+
+def _candidate_to_qualifier(profile: CandidateProfile) -> dict:
+    idiomes = {
+        l.language.lower(): ("C2" if l.level == "Native" else l.level)
+        for l in profile.languages
+    }
+    return {
+        "experiencia_anys": float(profile.years_experience),
+        "idiomes": idiomes,
+        "formacio_nivell": _EDU_MAP.get(profile.education_level),
+    }
+
+
+def _vacancy_to_qualifier(vac: Vacancy, exp_max: int) -> dict:
+    idioma_req = {
+        r.language.lower(): ("C2" if r.level == "Native" else r.level)
+        for r in vac.required_language_list
+    }
+    return {
+        "experiencia_min": int(vac.years_experience),
+        "experiencia_max": int(exp_max),
+        "idioma_requerit": idioma_req,
+        "formacio_min": _EDU_MAP.get(vac.highest_degree),
+    }
+
+
+@st.cache_data(show_spinner=False)
+def _cached_vacancies() -> list[Vacancy]:
+    _, vacs = load_vacancies()
+    return vacs
+
+
+@st.cache_resource(show_spinner=False)
+def _try_linguist():
+    """Carrega el Linguist (BGE + Chroma) una sola vegada. None si no està disponible."""
+    try:
+        from src.agents.linguist import analyse
+        return analyse
+    except Exception:
+        return None
+
+
+def _fallback_linguist(candidate: CandidateProfile, vacancy: Vacancy) -> dict:
+    """Substitut determinista quan BGE/Chroma no estan disponibles.
+
+    Compara noms en minúscules: igual → MATCH, prefix/contingut comú → GREY ZONE,
+    altrament NO MATCH. Pitjor que el semàntic real però manté el rànquing operatiu.
+    """
+    cand_names = [s.name.lower() for s in candidate.skills]
+    items = list(vacancy.skills) + list(vacancy.tools)
+    out_skills = []
+    for req in items:
+        rn = req.name.lower()
+        cls = "NO MATCH"
+        best = None
+        for cn in cand_names:
+            if cn == rn:
+                cls, best = "MATCH", cn
+                break
+            if cn in rn or rn in cn:
+                cls, best = "GREY ZONE", cn
+        out_skills.append({"vacancy_skill": req.name, "best_match": best, "similarity": 0.0, "classification": cls})
+    return {"skills": out_skills}
+
+
+def _linguist_for(candidate: CandidateProfile, vacancy: Vacancy) -> dict:
+    fn = _try_linguist()
+    if fn is None:
+        return _fallback_linguist(candidate, vacancy)
+    try:
+        return fn(candidate, vacancy)
+    except Exception:
+        return _fallback_linguist(candidate, vacancy)
+
+
+def compute_ranking(profile: CandidateProfile, top_n: int = 10) -> list[PodiumEntry]:
+    """Avalua el candidat contra totes les ofertes via Qualifier + Linguist + Podium."""
+    prof_input = _candidate_to_qualifier(profile)
+    entries: list[PodiumEntry] = []
+    for vac in _cached_vacancies():
+        off_input = _vacancy_to_qualifier(vac, vac.years_experience + 7)
+        qres = qualify(prof_input, off_input)
+        if qres.decision == "eliminate":
+            continue
+        ling = _linguist_for(profile, vac)
+        entry = build_entry(vac, ling, qres, prof_input, off_input)
+        if entry is not None:
+            entries.append(entry)
+
+    entries.sort(key=lambda e: e.score_match, reverse=True)
+    return entries[:top_n]
+
+
+def _render_axis_signal(label: str, reason: str | None) -> None:
+    """Mostra un eix com a senyal: ✓ verd si net, ⚠ àmbar amb el motiu si penalitzat."""
+    if reason is None:
+        st.markdown(f"<span style='color:#1f8a3c'>✓ {label}: encaixa</span>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"<span style='color:#b76e00'>⚠ {reason}</span>", unsafe_allow_html=True)
+
+
+def _vacancy_by_id(vid: int) -> Vacancy | None:
+    return next((v for v in _cached_vacancies() if v.id == vid), None)
+
+
+def render_ranking(profile: CandidateProfile) -> None:
+    st.markdown("### 🏆 Top 10 ofertes per a aquest candidat")
+    st.caption("Ordenat per compatibilitat (més alt = millor encaix).")
+
+    top = compute_ranking(profile, top_n=10)
+    total_offers = len(_cached_vacancies())
+    if not top:
+        st.warning(
+            f"Cap de les {total_offers} ofertes manté aquest candidat — "
+            f"sempre acaba en `eliminate` per idioma o experiència."
+        )
+        return
+
+    st.caption(f"Mostrant {len(top)} de {total_offers} ofertes vàlides.")
+
+    for rank, entry in enumerate(top, start=1):
+        vac = _vacancy_by_id(entry.offer_id)
+        with st.container(border=True):
+            top_l, top_r = st.columns([4, 1])
+            with top_l:
+                st.markdown(f"**#{rank} — {entry.role}** · _{entry.sector}_")
+                if vac is not None:
+                    st.caption(
+                        f"Oferta #{vac.id} · exp ≥ {vac.years_experience} anys · "
+                        f"formació: {vac.highest_degree} · "
+                        f"{'amb pràctiques' if vac.has_internship else 'sense pràctiques'}"
+                    )
+                    if vac.required_language_list:
+                        st.caption(
+                            "Idiomes: "
+                            + " · ".join(
+                                f"{r.language} {r.level}" for r in vac.required_language_list
+                            )
+                        )
+            with top_r:
+                st.markdown(
+                    f"<div style='text-align:right;font-size:2.6rem;font-weight:700;line-height:1'>"
+                    f"{entry.score_match}<span style='font-size:1.2rem'>%</span></div>"
+                    f"<div style='text-align:right;color:#888;font-size:0.85rem'>match</div>",
+                    unsafe_allow_html=True,
+                )
+
+            _render_axis_signal("Idioma", entry.reasons.language)
+            _render_axis_signal("Experiència", entry.reasons.experience)
+            _render_axis_signal("Formació", entry.reasons.education)
+
+            calc_bits = [f"Match base {entry.score_semantic}"]
+            if entry.penalties.language:
+                calc_bits.append(f"−{entry.penalties.language} idioma")
+            if entry.penalties.experience:
+                calc_bits.append(f"−{entry.penalties.experience} exp")
+            if entry.penalties.education:
+                calc_bits.append(f"−{entry.penalties.education} formació")
+            calc_bits.append(f"→ **{entry.score_match}**")
+            st.caption(" · ".join(calc_bits))
+
+            if entry.flags:
+                st.caption("⚑ " + " · ".join(f"`{f}`" for f in entry.flags))
+
+            if vac is not None:
+                with st.expander("Veure detalls de l'oferta"):
+                    must_have = [s for s in vac.skills if s.type == "must_have"]
+                    nice_to_have = [s for s in vac.skills if s.type == "nice_to_have"]
+                    other = [s for s in vac.skills if s.type not in {"must_have", "nice_to_have"}]
+
+                    if must_have:
+                        st.markdown("**Skills imprescindibles (must-have)**")
+                        for s in must_have:
+                            st.write(f"• {s.name} — _{s.purpose}_")
+                    if nice_to_have:
+                        st.markdown("**Skills valorades (nice-to-have)**")
+                        for s in nice_to_have:
+                            st.write(f"• {s.name} — _{s.purpose}_")
+                    if other:
+                        st.markdown("**Altres skills**")
+                        for s in other:
+                            st.write(f"• {s.name} — _{s.purpose}_")
+                    if vac.tools:
+                        st.markdown("**Eines**")
+                        for t in vac.tools:
+                            st.write(f"• {t.name} — _{t.purpose}_")
+                    if vac.required_languages:
+                        st.caption(
+                            f"L'oferta demana parlar com a mínim {vac.required_languages} idiomes."
+                        )
 
 EXAMPLES_DIR = Path("data/raw")
 PROCESSED_DIR = Path(DEFAULT_OUTPUT_DIR)
@@ -246,7 +449,6 @@ if selection is not None:
             else:
                 st.info("Encara no hi ha dades extretes per a aquest currículum.")
 
-# ─── Ranking placeholder ──────────────────────────────────────────────
-st.divider()
-st.header("Rànquing d'ofertes")
-st.info("🚧 **Properament:** matching semàntic amb ofertes (Alan Turing + Marie Curie + Hedy Lamarr)")
+        if profile:
+            st.divider()
+            render_ranking(profile)

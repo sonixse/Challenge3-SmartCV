@@ -8,7 +8,7 @@ from src.data.load_vacancies import load
 
 # Linguist agent - Semantic skills comparison using BGE embeddings + ChromaDB
 
-# run from root folder: python src/agents/4_linguist.py
+# run from root folder: python src/agents/linguist.py
 
 """
 General pseudocode
