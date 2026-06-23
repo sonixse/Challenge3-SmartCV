@@ -40,8 +40,7 @@ def _prof_input(candidate: CandidateProfile) -> dict:
     }
 
 
-def _off_input(vac) -> dict:
-    """Convert Vacancy → Qualifier input dict."""
+def _off_input(vac):
     return {
         "experiencia_min": int(vac.years_experience),
         "experiencia_max": int(vac.years_experience) + 7,
@@ -51,7 +50,6 @@ def _off_input(vac) -> dict:
         },
         "formacio_min": _EDU_MAP.get(vac.highest_degree),
     }
-
 
 # nodes
 

@@ -1,49 +1,11 @@
 import numpy as np
-import chromadb
-from chromadb.utils import embedding_functions
-from sentence_transformers import SentenceTransformer
 from src.schemas.candidate import CandidateProfile, CandidateSkill, CandidateLanguage
 from src.schemas.vacancy import Vacancy
 from src.data.load_vacancies import load
-
-# Linguist agent - Semantic skills comparison using BGE embeddings + ChromaDB
-
-# run from root folder: python src/agents/linguist.py
-
-"""
-General pseudocode
-
-for each vacancy skill requirement:
-    embed the skill name with BGE (BAAI General Embedding)
-    compute cosine similarity against each candidate skill vector (embedded on the fly)
-    take the highest similarity score
-    classify: MATCH / GREY ZONE / NO MATCH
-
-Semantic skills comparison.
-
-Two-step process:
-  1. Chroma query  -> coarse retrieval: find top-K most relevant vacancies for the candidate
-  2. Per-skill BGE -> fine-grained: for each vacancy skill, compare against all candidate skills
-                        and classify as MATCH / GREY ZONE / NO MATCH
-"""
-
-# Model (loaded once at module level)
-
-# In production move it to a shared singleton 
-# so multiple agents could share the same loaded model
-
-_MODEL = SentenceTransformer("BAAI/bge-small-en-v1.5")
-
-# Thresholds
+from src.db.chroma import client as _CHROMA_CLIENT, model as _MODEL
 from src.config import LINGUIST_MATCH_THRESHOLD as MATCH_THRESHOLD, LINGUIST_GREY_THRESHOLD as GREY_ZONE_THRESHOLD
 
-# ChromaDB
-_CHROMA_CLIENT = chromadb.PersistentClient(path="data/chroma")
-_EF = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name="BAAI/bge-small-en-v1.5",
-    normalize_embeddings=True
-)
-_COLLECTION = _CHROMA_CLIENT.get_collection(name="vacancies", embedding_function=_EF)
+_COLLECTION = _CHROMA_CLIENT.get_collection(name="vacancies")
 
 
 def _embed(text: str) -> np.ndarray:
@@ -74,7 +36,8 @@ def retrieve_top_k(candidate: CandidateProfile, k: int = 50) -> list[str]:
         f"Education: {candidate.education_level} in {candidate.education_field}. "
         f"Skills: {skill_text}."
     )
-    results = _COLLECTION.query(query_texts=[query], n_results=k)
+    query_vec = _MODEL.encode(query, normalize_embeddings=True).tolist()
+    results = _COLLECTION.query(query_embeddings=[query_vec], n_results=k)
     return results["ids"][0]   # list of vacancy IDs (strings)
 
 

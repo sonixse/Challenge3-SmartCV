@@ -1,8 +1,8 @@
 # run with `python scripts/index_vacancies.py` from root project folder
 
 from src.data.load_vacancies import load
-import chromadb
-from chromadb.utils import embedding_functions
+from src.db.chroma import client, ef
+
 
 """ 
 Indexes all vacancies into ChromaDB so Alan Turing can query them at match time
@@ -12,16 +12,7 @@ Each vacancy is converted into a text string, BGE turns it into a meaning-vector
 and ChromaDB stores both. Ready for nearest-neighbour closest match search.
 """
 
-# load vacancies
 _, vacancies = load()
-
-# set up chroma and BGE embeddings (text embedding pretrained model)
-
-client = chromadb.PersistentClient(path="data/chroma")
-ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name="BAAI/bge-small-en-v1.5", # for prod use "BAAI/bge-base-en-v1.5"
-    normalize_embeddings=True
-)
 
 collection = client.get_or_create_collection(
     name="vacancies", 
@@ -33,7 +24,7 @@ if collection.count() == len(vacancies):
     exit(0)
 
 # index each vacancy: build a text to embed, plus metadata
-for i, vac in enumerate(vacancies):
+for vac in vacancies:
 
     # Natural language text to embed
     skill_text = ", ".join(f"{s.name} ({s.purpose})" for s in vac.skills)
@@ -46,9 +37,9 @@ for i, vac in enumerate(vacancies):
         f"Skills: {skill_text}. "
         f"Tools: {tool_text}. "
     )
-    
+
     collection.add(
-        ids=[str(i)],
+        ids=[str(vac.id)],
         documents=[text],
         metadatas=[{
             # chroma only supports str, int and float metadata

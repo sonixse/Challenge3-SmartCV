@@ -1,15 +1,14 @@
 # run with `python src/data/load_vacancies.py` from root project folder
 
 import json
-from pydantic import TypeAdapter
 from src.schemas.vacancy import Vacancy
 
-def load():
-    path = "data/synth/ofertes.json"
-    data = json.loads(open(path, encoding="utf-8").read())
+path = "data/synth/ofertes.json"
 
-    vacancies = TypeAdapter(list[Vacancy]).validate_python(data)
-    return path, vacancies
+def load():
+    data = json.load(open(path))
+    vacancies = [Vacancy(**v) for v in data]
+    return None, vacancies
 
 if __name__ == "__main__":
     path, vacancies = load()
@@ -38,5 +37,3 @@ if __name__ == "__main__":
         #    print(f"\t{k}: {v}")
         top_sector = next(iter(sorted_sectors))
         print(f"\nTop sector for {job} is", top_sector, f"with {max(sorted_sectors.values())} offers")
-
-
