@@ -4,6 +4,8 @@ from pathlib import Path
 
 import streamlit as st
 
+from src.ui.skill_icons import skill_icon_html
+
 from src.agents.interpreter import (
     DEFAULT_OUTPUT_DIR,
     interpret,
@@ -99,8 +101,56 @@ def _linguist_for(candidate: CandidateProfile, vacancy: Vacancy) -> dict:
         return _fallback_linguist(candidate, vacancy)
 
 
+def _run_detective(linguist_result: dict, raw_text: str) -> dict:
+    """Resolve grey-zone skills via Detective and merge verdicts into linguist_result.
+
+    Supports both the real Linguist output (has a 'grey_zone' key) and the
+    fallback (no key — grey-zone skills are inferred from the skills list).
+    Falls back silently if Detective fails or Ollama is unavailable; Podium
+    then applies the 0.5 credit fallback for any remaining GREY ZONE entries.
+    """
+    grey_zone: list[str] = linguist_result.get("grey_zone") or [
+        s["vacancy_skill"]
+        for s in linguist_result.get("skills", [])
+        if s.get("classification") == "GREY ZONE"
+    ]
+    if not grey_zone:
+        return linguist_result
+
+    try:
+        from src.agents.detective import resolve as detective_resolve
+        # best_match: the candidate skill the Linguist found closest to each grey-zone skill.
+        # Passed as aliases so _relevant_context can locate the right CV section even when
+        # the vacancy skill name does not appear verbatim in the text.
+        aliases = {
+            s["vacancy_skill"]: s["best_match"]
+            for s in linguist_result.get("skills", [])
+            if s.get("classification") == "GREY ZONE" and s.get("best_match")
+        }
+        det = detective_resolve(grey_zone, raw_text, aliases=aliases)
+        for skill_entry in linguist_result.get("skills", []):
+            name = skill_entry["vacancy_skill"]
+            if name in det.verdicts:
+                skill_entry["classification"] = det.verdicts[name].classification
+
+        # Accumulate verdicts for the advisor (first encounter per skill wins)
+        knowledge = st.session_state.get("detective_knowledge", {})
+        for skill, verdict in det.verdicts.items():
+            if skill not in knowledge:
+                knowledge[skill] = {
+                    "classification": verdict.classification,
+                    "reasoning":      verdict.reasoning,
+                }
+        st.session_state.detective_knowledge = knowledge
+    except Exception:
+        pass  # Ollama unavailable — keep GREY ZONE, Podium gives 0.5 credit
+
+    return linguist_result
+
+
 def compute_ranking(profile: CandidateProfile, top_n: int = 10) -> list[PodiumEntry]:
-    """Avalua el candidat contra totes les ofertes via Qualifier + Linguist + Podium."""
+    """Avalua el candidat contra totes les ofertes via Qualifier + Linguist + Detective + Podium."""
+    st.session_state.detective_knowledge = {}  # reset for each new ranking run
     prof_input = _candidate_to_qualifier(profile)
     entries: list[PodiumEntry] = []
     for vac in _cached_vacancies():
@@ -109,6 +159,7 @@ def compute_ranking(profile: CandidateProfile, top_n: int = 10) -> list[PodiumEn
         if qres.decision == "eliminate":
             continue
         ling = _linguist_for(profile, vac)
+        ling = _run_detective(ling, profile.raw_text)
         entry = build_entry(vac, ling, qres, prof_input, off_input)
         if entry is not None:
             entries.append(entry)
@@ -129,11 +180,46 @@ def _vacancy_by_id(vid: int) -> Vacancy | None:
     return next((v for v in _cached_vacancies() if v.id == vid), None)
 
 
-def render_ranking(profile: CandidateProfile) -> None:
-    st.markdown("### 🏆 Top 10 ofertes per a aquest candidat")
-    st.caption("Ordenat per compatibilitat (més alt = millor encaix).")
+def render_advisor_chat(profile: CandidateProfile, ranking: list[PodiumEntry]) -> None:
+    from chat.advisor import build_context, advisor_respond
 
-    top = compute_ranking(profile, top_n=10)
+    st.markdown("### Assessor de CVs 🧑‍💼")
+    st.caption("Pregunta'm per què el teu CV no fa match o com pots millorar-lo.")
+
+    detective_knowledge = st.session_state.get("detective_knowledge", {})
+    system_prompt = build_context(profile, ranking, detective_knowledge)
+
+    if "advisor_history" not in st.session_state:
+        st.session_state.advisor_history = []
+
+    for msg in st.session_state.advisor_history:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+
+    if user_input := st.chat_input("Escriu la teva pregunta..."):
+        st.session_state.advisor_history.append({"role": "user", "content": user_input})
+        with st.chat_message("user"):
+            st.write(user_input)
+        with st.chat_message("assistant"):
+            with st.spinner("..."):
+                reply = advisor_respond(
+                    user_input,
+                    st.session_state.advisor_history[:-1],
+                    system_prompt,
+                )
+            st.write(reply)
+        st.session_state.advisor_history.append({"role": "assistant", "content": reply})
+
+
+def render_ranking(profile: CandidateProfile) -> list[PodiumEntry]:
+    st.markdown("### Rànquing d'ofertes")
+    with st.spinner("Calculant matching..."):
+        top = compute_ranking(profile)
+    _render_ranking_cards(top)
+    return top
+
+
+def _render_ranking_cards(top: list[PodiumEntry]) -> None:
     total_offers = len(_cached_vacancies())
     if not top:
         st.warning(
@@ -190,10 +276,9 @@ def render_ranking(profile: CandidateProfile) -> None:
 
             if vac is not None:
                 with st.expander("Veure detalls de l'oferta"):
-                    must_have = [s for s in vac.skills if s.type == "must_have"]
+                    must_have   = [s for s in vac.skills if s.type == "must_have"]
                     nice_to_have = [s for s in vac.skills if s.type == "nice_to_have"]
-                    other = [s for s in vac.skills if s.type not in {"must_have", "nice_to_have"}]
-
+                    other       = [s for s in vac.skills if s.type not in {"must_have", "nice_to_have"}]
                     if must_have:
                         st.markdown("**Skills imprescindibles (must-have)**")
                         for s in must_have:
@@ -305,45 +390,114 @@ def render_pdf(pdf_path: Path, height: int = 720) -> None:
         f'style="border:1px solid #2a2a2a;border-radius:6px;"></iframe>',
         unsafe_allow_html=True,
     )
-    st.download_button(
-        "Descarregar PDF",
-        data,
-        file_name=pdf_path.name,
-        mime="application/pdf",
-        key=f"dl_{pdf_path.name}",
-    )
+
+
+_LEVEL_COLOR = {
+    "native": "#15803d", "c2": "#15803d",
+    "c1": "#1d4ed8", "b2": "#7c3aed",
+    "b1": "#b45309", "a2": "#dc2626", "a1": "#dc2626",
+}
 
 
 def render_profile(profile: CandidateProfile) -> None:
-    st.markdown(f"### {profile.name}")
-    meta = []
+    meta_parts = []
     if profile.location:
-        meta.append(f"📍 {profile.location}")
+        meta_parts.append(f"📍 {profile.location}")
     if profile.contact:
-        meta.append(f"✉️ {profile.contact}")
-    if meta:
-        st.caption(" · ".join(meta))
+        meta_parts.append(f"✉️ {profile.contact}")
+    meta_html = (
+        f"<p style='color:#888;font-size:0.85rem;margin:4px 0 0 0'>"
+        + " &nbsp;·&nbsp; ".join(meta_parts) + "</p>"
+    ) if meta_parts else ""
 
-    st.markdown("**Experiència**")
-    st.write(f"{profile.years_experience} anys d'experiència professional")
+    st.markdown(
+        f"<div style='padding:8px 0 16px 0'>"
+        f"<h2 style='margin:0;font-size:1.9rem;font-weight:800'>{profile.name}</h2>"
+        f"{meta_html}</div>",
+        unsafe_allow_html=True,
+    )
 
-    st.markdown("**Formació**")
-    st.write(f"{profile.education_level} · {profile.education_field}")
+    CARD_H = "130px"
+    exp_col, edu_col = st.columns([1, 2])
+    with exp_col:
+        st.markdown(
+            f"<div style='background:linear-gradient(135deg,#0e4f82,#1976d2);color:white;"
+            f"border-radius:14px;padding:20px 16px;text-align:center;"
+            f"min-height:{CARD_H};display:flex;flex-direction:column;justify-content:center'>"
+            f"<div style='font-size:0.85rem;font-weight:700;letter-spacing:1px;"
+            f"text-transform:uppercase;margin-bottom:6px'>💼 Experiència</div>"
+            f"<div style='font-size:3rem;font-weight:900;line-height:1'>{profile.years_experience}</div>"
+            f"<div style='font-size:0.85rem;opacity:.85;margin-top:4px'>anys</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    with edu_col:
+        st.markdown(
+            f"<div style='background:linear-gradient(135deg,#1a5c3a,#2e7d52);color:white;"
+            f"border-radius:14px;padding:20px 18px;"
+            f"min-height:{CARD_H};display:flex;flex-direction:column;justify-content:center'>"
+            f"<div style='font-size:0.85rem;font-weight:700;letter-spacing:1px;"
+            f"text-transform:uppercase;margin-bottom:8px'>🎓 Formació</div>"
+            f"<div style='font-size:1.4rem;font-weight:800;line-height:1.2'>{profile.education_level}</div>"
+            f"<div style='font-size:0.88rem;opacity:.85;margin-top:6px'>{profile.education_field}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
 
-    st.markdown("**Skills**")
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
+    st.markdown(
+        "<p style='font-size:1rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;"
+        "color:white;margin-bottom:8px'>🛠 Skills</p>",
+        unsafe_allow_html=True,
+    )
     if profile.skills:
+        icons_html = ""
         for s in profile.skills:
-            years = f" — {s.years} anys" if s.years is not None else ""
-            st.write(f"• {s.name}{years}")
-    else:
-        st.write("_Sense skills detectades_")
+            icon = skill_icon_html(s.name, size=22)
+            if icon:
+                icons_html += (
+                    f"<span title='{s.name}' style='display:inline-flex;align-items:center;"
+                    f"justify-content:center;width:36px;height:36px;margin:3px 2px;"
+                    f"background:#f3f0ff;border-radius:8px'>"
+                    f"{icon}</span>"
+                )
+        st.markdown(f"<div style='margin-bottom:10px'>{icons_html}</div>", unsafe_allow_html=True)
 
-    st.markdown("**Idiomes**")
-    if profile.languages:
-        for lang in profile.languages:
-            st.write(f"• {lang.language} ({lang.level})")
+        tags = "".join(
+            f"<span style='display:inline-block;"
+            f"border:1.5px solid #7c3aed;color:#6d28d9;"
+            f"border-radius:24px;padding:9px 20px;margin:5px 6px 5px 0;"
+            f"font-size:1.05rem;font-weight:600;background:#ede9fe'>"
+            f"{s.name}{(f' · {s.years}a') if s.years is not None else ''}</span>"
+            for s in profile.skills
+        )
+        st.markdown(f"<div style='line-height:2.8'>{tags}</div>", unsafe_allow_html=True)
     else:
-        st.write("_Sense idiomes detectats_")
+        st.caption("_Sense skills detectades_")
+
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
+    st.markdown(
+        "<p style='font-size:1rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;"
+        "color:white;margin-bottom:8px'>🌐 Idiomes</p>",
+        unsafe_allow_html=True,
+    )
+    if profile.languages:
+        lang_html = "".join(
+            f"<div style='display:inline-flex;align-items:center;gap:8px;"
+            f"background:rgba(0,0,0,.04);border-radius:10px;padding:8px 16px;"
+            f"margin:4px 6px 4px 0;border:1px solid rgba(0,0,0,.08)'>"
+            f"<span style='font-weight:700;font-size:0.95rem'>{lang.language}</span>"
+            f"<span style='background:{_LEVEL_COLOR.get(lang.level.lower().replace(' ',''), '#555')};"
+            f"color:white;border-radius:6px;padding:2px 9px;"
+            f"font-size:0.75rem;font-weight:700'>{lang.level}</span>"
+            f"</div>"
+            for lang in profile.languages
+        )
+        st.markdown(f"<div style='line-height:3'>{lang_html}</div>", unsafe_allow_html=True)
+    else:
+        st.caption("_Sense idiomes detectats_")
 
 
 def card_summary(nn: str, pdf: Path) -> tuple[str, str]:
@@ -361,56 +515,63 @@ def card_summary(nn: str, pdf: Path) -> tuple[str, str]:
 # UI
 # ──────────────────────────────────────────────────────────────────────
 
-st.title("🎯 SmartCV")
-st.caption("Sistema multi-agent de matching semàntic CV ↔ oferta")
-
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 if "selected" not in st.session_state:
     st.session_state.selected = None
-
-# ─── Examples ─────────────────────────────────────────────────────────
-st.header("Currículums d'exemple")
+if "dropdown_v" not in st.session_state:
+    st.session_state.dropdown_v = 0
+if "detail_view" not in st.session_state:
+    st.session_state.detail_view = "pdf"
 
 examples = list_example_pdfs()
 
-if not examples:
-    st.info(f"No s'han trobat PDFs a `{EXAMPLES_DIR}/`.")
-else:
-    cols_per_row = 5
-    items = list(examples.items())
-    for row_start in range(0, len(items), cols_per_row):
-        cols = st.columns(cols_per_row)
-        for col, (nn, pdf) in zip(cols, items[row_start:row_start + cols_per_row]):
-            title, sub = card_summary(nn, pdf)
-            cached = cache_path_for_nn(nn).exists()
-            with col:
-                with st.container(border=True):
-                    thumb = pdf_first_page_png(str(pdf), pdf.stat().st_mtime)
-                    if thumb:
-                        st.image(thumb, use_container_width=True)
-                    st.markdown(f"**{title}**")
-                    st.caption(sub)
-                    label = "Veure" if cached else "Processar i veure"
-                    if st.button(label, key=f"btn_ex_{nn}", use_container_width=True):
-                        st.session_state.selected = ("example", nn)
-                        st.rerun()
+st.markdown(
+    "<style>div[data-baseweb='select'] { cursor: pointer; }"
+    "div[data-baseweb='select'] * { cursor: pointer; }</style>",
+    unsafe_allow_html=True,
+)
 
-# ─── Upload ───────────────────────────────────────────────────────────
-st.header("Afegir currículum")
+# ─── Capçalera: títol + dropdown | upload ─────────────────────────────
+hdr_left, hdr_right = st.columns([3, 2], gap="large")
 
-uploaded = st.file_uploader("Puja un PDF", type=["pdf"], key="uploader")
-if uploaded is not None:
-    stem = Path(uploaded.name).stem
-    target_pdf = UPLOADS_DIR / uploaded.name
-    if not target_pdf.exists():
-        target_pdf.write_bytes(uploaded.getbuffer())
-    if st.button("Processar currículum pujat", key="btn_process_upload"):
-        st.session_state.selected = ("upload", stem)
-        st.rerun()
+with hdr_left:
+    st.title("🎯 SmartCV")
+    st.caption("Sistema multi-agent de matching semàntic CV ↔ oferta")
 
-# ─── Detail view ──────────────────────────────────────────────────────
+    if examples:
+        nn_list = list(examples.keys())
+        labels = []
+        for nn in nn_list:
+            p = load_cached(cache_path_for_nn(nn))
+            labels.append(p.name if p else f"CV #{nn}")
+        label_to_nn = dict(zip(labels, nn_list))
+
+        chosen_label = st.selectbox(
+            "Currículums d'exemple",
+            options=labels,
+            index=None,
+            placeholder="Selecciona un currículum d'exemple...",
+            label_visibility="collapsed",
+            key=f"cv_dropdown_{st.session_state.dropdown_v}",
+        )
+        if chosen_label:
+            st.session_state.selected = ("example", label_to_nn[chosen_label])
+
+with hdr_right:
+    st.subheader("Afegir currículum")
+    uploaded = st.file_uploader("Puja un PDF", type=["pdf"], key="uploader")
+    if uploaded is not None:
+        stem = Path(uploaded.name).stem
+        target_pdf = UPLOADS_DIR / uploaded.name
+        if not target_pdf.exists():
+            target_pdf.write_bytes(uploaded.getbuffer())
+        if st.button("Processar currículum pujat", key="btn_process_upload"):
+            st.session_state.selected = ("upload", stem)
+            st.rerun()
+
+# ─── Detall del CV seleccionat ────────────────────────────────────────
 selection = st.session_state.selected
 if selection is not None:
     kind, key = selection
@@ -426,29 +587,36 @@ if selection is not None:
     if pdf_path is None or not pdf_path.exists():
         st.warning("No s'ha trobat el PDF seleccionat.")
     else:
-        top_left, top_right = st.columns([4, 1])
-        with top_left:
-            st.subheader(f"Detall — {pdf_path.name}")
-        with top_right:
-            if st.button("⬅ Tornar", use_container_width=True):
+        header_l, header_r = st.columns([4, 1])
+        with header_l:
+            st.subheader(f"Anàlisi — {pdf_path.name}")
+        with header_r:
+            if st.button("Esborrar currículum actual", use_container_width=True):
                 st.session_state.selected = None
+                st.session_state.dropdown_v += 1
+                st.session_state.detail_view = "pdf"
                 st.rerun()
 
         profile = load_cached(cache)
         if profile is None:
             profile = run_interpret_with_ui(pdf_path, cache)
 
-        left, right = st.columns([1, 1])
-        with left:
-            st.markdown("#### PDF original")
-            render_pdf(pdf_path)
-        with right:
-            st.markdown("#### Dades extretes")
-            if profile:
-                render_profile(profile)
-            else:
-                st.info("Encara no hi ha dades extretes per a aquest currículum.")
+        left_col, right_col = st.columns([1, 1], gap="large")
 
-        if profile:
-            st.divider()
-            render_ranking(profile)
+        with left_col:
+            tab_pdf, tab_data = st.tabs(["📄 PDF original", "📋 Dades extretes"])
+            with tab_pdf:
+                render_pdf(pdf_path)
+            with tab_data:
+                if profile:
+                    render_profile(profile)
+                else:
+                    st.info("Encara no hi ha dades extretes per a aquest currículum.")
+
+        with right_col:
+            if profile:
+                top = render_ranking(profile)
+                st.divider()
+                render_advisor_chat(profile, top)
+            else:
+                st.info("Processa el currículum per veure el rànquing i el chat assessor.")

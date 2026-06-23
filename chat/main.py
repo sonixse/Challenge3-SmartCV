@@ -280,7 +280,7 @@ with gr.Blocks(title="Chat") as demo:
                 -webkit-text-fill-color: transparent;
                 margin: 0 0 0.3rem 0;
                 font-family: 'Inter', sans-serif;
-            ">Chat</h1>
+            ">SmartCV Assessor</h1>
             <p class="header-sub" style="
                 color: #4a4a70;
                 font-size: clamp(0.75rem, 2.5vw, 0.85rem);

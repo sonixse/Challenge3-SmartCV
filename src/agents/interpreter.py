@@ -42,6 +42,40 @@ _SKILL_TRANSLATIONS = {
     "procesamiento de lenguaje natural": "NLP",
 }
 
+# Language level normalization: handles slash/range formats (e.g. "Native/B2", "B1-B2")
+# and LinkedIn-style labels (English and Spanish).
+_CEFR_ORDER = ["C2", "C1", "B2", "B1", "A2", "A1"]  # highest first
+
+# Ordered longest-first so "full professional" matches before "professional"
+_LINKEDIN_LEVELS: list[tuple[str, str]] = [
+    ("native or bilingual",          "Native"),
+    ("bilingüe",                     "Native"),
+    ("full professional",            "C1"),
+    ("dominio profesional completo", "C1"),
+    ("competencia profesional plena","C1"),
+    ("professional working",         "B2"),
+    ("competencia profesional",      "B2"),
+    ("limited working",              "B1"),
+    ("competencia laboral limitada", "B1"),
+    ("elementary proficiency",       "A2"),
+    ("competencia elemental",        "A2"),
+]
+
+def _normalize_language_level(raw: str | None) -> str:
+    if not raw:
+        return "B2"  # conservative default (matches SYSTEM_PROMPT)
+    low = raw.lower()
+    if re.search(r'\bnativ', low):  # native / nativo / nativa
+        return "Native"
+    for phrase, cefr in _LINKEDIN_LEVELS:
+        if phrase in low:
+            return cefr
+    for level in _CEFR_ORDER:
+        if level.lower() in low:
+            return level
+    return raw
+
+
 def _normalize_skill(name: str) -> str:
     """Strip Spanish qualifiers/parentheticals and translate common Spanish tech terms."""
     low = name.lower().strip()
@@ -51,13 +85,121 @@ def _normalize_skill(name: str) -> str:
     return cleaned if cleaned else name
 
 
+# Deterministic language recovery — catches what the LLM misses
+# Keys: lowercase name as it may appear in the CV (Spanish / Catalan / English)
+# Values: canonical English name
+_KNOWN_LANGUAGES: dict[str, str] = {
+    # Spanish names
+    "inglés": "English",    "ingles": "English",
+    "español": "Spanish",   "castellano": "Spanish",
+    "catalán": "Catalan",   "catalan": "Catalan",   "català": "Catalan",
+    "francés": "French",    "frances": "French",
+    "alemán": "German",     "aleman": "German",
+    "italiano": "Italian",
+    "portugués": "Portuguese", "portugues": "Portuguese",
+    "ruso": "Russian",
+    "chino": "Chinese",
+    "árabe": "Arabic",      "arabe": "Arabic",
+    "japonés": "Japanese",  "japones": "Japanese",
+    "coreano": "Korean",
+    "holandés": "Dutch",    "holandes": "Dutch",
+    "sueco": "Swedish",
+    "noruego": "Norwegian",
+    "polaco": "Polish",
+    "griego": "Greek",
+    "turco": "Turkish",
+    "hindi": "Hindi",
+    "euskera": "Basque",    "vasco": "Basque",
+    "gallego": "Galician",
+    "valenciano": "Valencian",
+    # Catalan names
+    "anglès": "English",   "angles": "English",
+    "rus": "Russian",
+    "francès": "French",   "frances": "French",
+    "alemany": "German",
+    "italià": "Italian",   "italia": "Italian",
+    "portuguès": "Portuguese",
+    "xinès": "Chinese",
+    "àrab": "Arabic",
+    "japonès": "Japanese",
+    # English names (for CVs written in English)
+    "english": "English",  "spanish": "Spanish",  "french": "French",
+    "german": "German",    "italian": "Italian",  "portuguese": "Portuguese",
+    "russian": "Russian",  "chinese": "Chinese",  "arabic": "Arabic",
+    "japanese": "Japanese","korean": "Korean",    "dutch": "Dutch",
+    "swedish": "Swedish",  "norwegian": "Norwegian", "polish": "Polish",
+    "greek": "Greek",      "turkish": "Turkish",  "basque": "Basque",
+    "galician": "Galician","valencian": "Valencian",
+}
+
+_VALID_LEVELS = {"A1", "A2", "B1", "B2", "C1", "C2", "Native"}
+
+# Pattern built once at import time (longest key first to avoid partial matches)
+_LANG_SCAN_RE = re.compile(
+    r'\b(' + '|'.join(re.escape(k) for k in sorted(_KNOWN_LANGUAGES, key=len, reverse=True)) + r')\b'
+    r'([^,\n;]{0,30})',
+    re.IGNORECASE,
+)
+
+def _recover_missing_languages(raw_text: str, found: list[dict]) -> list[dict]:
+    """Scan raw_text for language names the LLM missed and append them."""
+    seen = {d["language"].lower() for d in found}
+    extra: list[dict] = []
+
+    for m in _LANG_SCAN_RE.finditer(raw_text):
+        en_name = _KNOWN_LANGUAGES[m.group(1).lower()]
+        if en_name.lower() in seen:
+            continue
+        seen.add(en_name.lower())
+        level = _normalize_language_level(m.group(2).strip())
+        if level not in _VALID_LEVELS:
+            level = "B2"
+        extra.append({"language": en_name, "level": level})
+
+    return found + extra
+
+
 # PDF extraction
+
+_LETTER_SPACING_THRESHOLD = 0.45  # ratio of single-char tokens that triggers collapse
+
+def _fix_letter_spacing(text: str) -> str:
+    """Collapse letter-spaced PDF text.
+
+    Some PDFs (e.g. design-tool exports) store each character with a gap,
+    so pypdf produces ' N a t i v o / B 2'. This function detects
+    that pattern via the single-char token ratio and collapses it:
+      - ≥2 consecutive spaces → word boundary (kept as one space)
+      - single spaces between chars → removed (letters merged into words)
+    CVs without this problem are returned unchanged.
+    """
+    tokens = text.split()
+    if not tokens:
+        return text
+    ratio = sum(1 for t in tokens if len(t) == 1) / len(tokens)
+    if ratio < _LETTER_SPACING_THRESHOLD:
+        return text  # normal CV, leave untouched
+
+    lines = []
+    for line in text.split('\n'):
+        if not line.strip():
+            lines.append('')
+            continue
+        # ≥2 spaces = word separator; single spaces = letter separator → remove
+        parts = re.split(r' {2,}', line)
+        collapsed = ' '.join(p.replace(' ', '') for p in parts)
+        # Two-column PDFs sometimes merge adjacent words: "nativoEspañol" → "nativo Español"
+        collapsed = re.sub(r'([a-záéíóúüñ])([A-ZÁÉÍÓÚÜÑ])', r'\1 \2', collapsed)
+        lines.append(collapsed)
+    return '\n'.join(lines)
+
 
 def extract_text(pdf_path: str) -> str:
     """Extract raw text from a PDF file."""
     reader = PdfReader(pdf_path)
     pages  = [page.extract_text() or "" for page in reader.pages]
-    return "\n".join(pages).strip()
+    raw    = "\n".join(pages).strip()
+    return _fix_letter_spacing(raw)
 
 
 # LLM prompt
@@ -94,7 +236,7 @@ Rules:
 - education_level: use exactly one of the four allowed values. ALWAYS in English — never translate (e.g. use "Master's", never "Máster" or "Maîtrise").
 - location: city and/or country as written in the CV header. Use null if not found.
 - contact: extract email address first; if absent, use phone number. Use null if neither found.
-- languages: use CEFR levels (A1, A2, B1, B2, C1, C2) or "Native". If no level is stated, infer from context or use "B2" as a conservative default.
+- languages: always output the language name in English (e.g. "Inglés"→"English", "Ruso"→"Russian", "Francés"→"French", "Alemán"→"German", "Chino"→"Chinese", "Árabe"→"Arabic", "Italiano"→"Italian", "Portugués"→"Portuguese", "Japonés"→"Japanese", "Catalán"→"Catalan"). For the level, use CEFR (A1, A2, B1, B2, C1, C2) or "Native". Combined formats like "Nativo/B2" or "Native/B2" are valid — extract them as-is and pick the highest. If no level is stated, use "B2" as a conservative default.
 - raw_text: copy the FULL original CV text here verbatim.
 """
 
@@ -145,11 +287,18 @@ def interpret(pdf_path: str, model: str = "llama3") -> CandidateProfile:
             data = json.loads(content)
             data["raw_text"] = raw_text  # always use the original extracted text
 
-            # normalize education_level and skill names before Pydantic validation
+            # normalize education_level, skill names, and language levels before Pydantic validation
             data["education_level"] = _normalize_education(data.get("education_level", ""))
             if "skills" in data:
                 for skill in data["skills"]:
                     skill["name"] = _normalize_skill(skill["name"])
+            llm_langs = data.get("languages", [])
+            for lang in llm_langs:
+                lang["level"] = _normalize_language_level(lang.get("level", ""))
+                # Translate Spanish/Catalan language names to English (llama3 ignores the prompt)
+                name_key = lang.get("language", "").lower()
+                lang["language"] = _KNOWN_LANGUAGES.get(name_key, lang.get("language", ""))
+            data["languages"] = _recover_missing_languages(raw_text, llm_langs)
 
             profile = CandidateProfile.model_validate(data)
             elapsed = time.time() - t0

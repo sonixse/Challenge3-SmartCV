@@ -1,6 +1,6 @@
 import ollama
 
-MODELS = ["llama3.1", "llama3.2"]
+MODELS = ["llama3", "llama3.1", "llama3.2"]
 
 # run `ollama serve` in a terminal
 
