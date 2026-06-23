@@ -17,13 +17,16 @@ from src.schemas.vacancy import Vacancy
 
 # Pesos per agregar la cobertura de skills. Must-have val el doble que la resta
 # perquè perdre'n una és més greu que perdre una eina o un nice-to-have.
-_WEIGHT_MUST_HAVE = 2.0
-_WEIGHT_NICE_TO_HAVE = 1.0
-_WEIGHT_OTHER = 1.0  # tools i skills sense type
 
-# Crèdit per classificació del Linguist. GREY ZONE val mig MATCH per donar marge
-# als sinònims (p.ex. "scikit-learn" vs "ML libraries") sense regalar punts.
-_CREDIT = {"MATCH": 1.0, "GREY ZONE": 0.5, "NO MATCH": 0.0}
+from src.config import (
+    PODIUM_WEIGHT_MUST  as _WEIGHT_MUST_HAVE,
+    PODIUM_WEIGHT_NICE  as _WEIGHT_NICE_TO_HAVE,
+    PODIUM_WEIGHT_OTHER as _WEIGHT_OTHER,
+    PODIUM_CREDIT_MATCH, PODIUM_CREDIT_GREY, PODIUM_CREDIT_NO,
+)
+_CREDIT = {"MATCH": PODIUM_CREDIT_MATCH, 
+           "GREY ZONE": PODIUM_CREDIT_GREY, 
+           "NO MATCH": PODIUM_CREDIT_NO}
 
 
 class PodiumPenalties(BaseModel):

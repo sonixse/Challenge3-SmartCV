@@ -1,4 +1,4 @@
-"""Detective agent — resolves GREY ZONE skills to binary MATCH / NO MATCH.
+"""Detective agent. Resolves GREY ZONE skills to binary MATCH / NO MATCH.
 
 Called by the pipeline only when the Linguist flags at least one skill as GREY ZONE
 (cosine similarity 0.60-0.85).  For each ambiguous skill the agent asks the LLM:
@@ -15,11 +15,12 @@ from typing import Literal
 import ollama
 from pydantic import BaseModel, ValidationError
 
-MAX_RETRIES    = 3
-RETRY_DELAY    = 2.0   # seconds (doubles on each retry)
-MAX_WORKERS    = 3     # concurrent Ollama calls (one per grey-zone skill)
-CONTEXT_WINDOW = 400   # chars around keyword match sent to the LLM
-OLLAMA_TIMEOUT = 30.0  # seconds before giving up on a single Ollama call
+from src.config import (
+    MAX_RETRIES, RETRY_DELAY,
+    DETECTIVE_MAX_WORKERS  as MAX_WORKERS,
+    DETECTIVE_OLLAMA_TIMEOUT as OLLAMA_TIMEOUT,
+    DETECTIVE_CONTEXT_WINDOW as CONTEXT_WINDOW,
+)
 
 
 class DetectiveVerdict(BaseModel):

@@ -1,52 +1,217 @@
 from typing import TypedDict
 from langgraph.graph import StateGraph, END
 from src.schemas.candidate import CandidateProfile
+from src.config import LINGUIST_TOP_K, PODIUM_TOP_N
+
+# Education level mapping: canonical English to Qualifier's Catalan/Spanish labels
+_EDU_MAP = {
+    "No degree":  None,
+    "Bachelor's": "Grau",
+    "Master's":   "Master",
+    "PhD":        "Doctorat",
+}
 
 
 class State(TypedDict):
+    # --- initial inputs (required when invoking the compiled graph) ---
+    pdf_path:  str   # absolute path to the candidate's CV PDF
+    model:     str   # Ollama model name, e.g. "llama3"
+
+    # --- filled in by nodes ---
     candidate:        CandidateProfile
-    qualifier_result: dict   # pass/score/fail
-    linguist_result:  dict   # match/grey zone/no match per vacancy
-    detective_result: dict   # resolve grey zone skills
-    podium_result:    dict   # candidates ranking
-    visionary_result: dict   # coaching, gap analysis
+    vacancies:        list   # list[Vacancy], loaded once by interpreter_node
+    qualifier_result: dict   # {"pass": bool, "by_offer": {offer_id_str: QualifierResult dict}}
+    linguist_result:  dict   # {"by_offer": {offer_id_str: analyse_dict}, "grey_zone": [str]}
+    detective_result: dict   # DetectiveResult.model_dump()
+    podium_result:    dict   # {"ranking": [PodiumEntry dicts sorted by score_match desc]}
+    visionary_result: dict   # VisionaryResult.model_dump()
+    publisher_result: dict   # {"run_id": int, "candidate": str, "best_fit_role": str, ...}
 
 
-# replace each with a real (State) once the corresponding agent is ready to plug in
+def _prof_input(candidate: CandidateProfile) -> dict:
+    """Convert CandidateProfile → Qualifier input dict."""
+    return {
+        "experiencia_anys": float(candidate.years_experience),
+        "idiomes": {
+            lang.language.lower(): ("C2" if lang.level == "Native" else lang.level)
+            for lang in candidate.languages
+        },
+        "formacio_nivell": _EDU_MAP.get(candidate.education_level),
+    }
 
-def interpreter_node(_state: State) -> dict:  # src/agents/interpreter.py
-    raise NotImplementedError
 
-def qualifier_node(_state: State) -> dict:    # src/agents/3_qualifier.py
-    raise NotImplementedError
+def _off_input(vac) -> dict:
+    """Convert Vacancy → Qualifier input dict."""
+    return {
+        "experiencia_min": int(vac.years_experience),
+        "experiencia_max": int(vac.years_experience) + 7,
+        "idioma_requerit": {
+            r.language.lower(): ("C2" if r.level == "Native" else r.level)
+            for r in vac.required_language_list
+        },
+        "formacio_min": _EDU_MAP.get(vac.highest_degree),
+    }
 
-def linguist_node(_state: State) -> dict:     # src/agents/4_linguist.py
-    raise NotImplementedError
+
+# nodes
+
+def interpreter_node(state: State) -> dict:
+    from src.agents.interpreter import interpret
+    from src.data.load_vacancies import load as load_vacancies
+
+    profile = interpret(state["pdf_path"], model=state["model"])
+    _, vacancies = load_vacancies()
+    return {"candidate": profile, "vacancies": vacancies}
+
+
+def qualifier_node(state: State) -> dict:
+    from src.agents.qualifier import qualify
+
+    prof = _prof_input(state["candidate"])
+    by_offer = {}
+    for vac in state["vacancies"]:
+        result = qualify(prof, _off_input(vac))
+        by_offer[str(vac.id)] = result.model_dump()
+
+    has_any_keep = any(r["decision"] == "keep" for r in by_offer.values())
+    return {
+        "qualifier_result": {
+            "pass":     has_any_keep,
+            "by_offer": by_offer,
+        }
+    }
+
+
+def linguist_node(state: State) -> dict:
+    from src.agents.linguist import analyse, retrieve_top_k
+
+    candidate          = state["candidate"]
+    qualifier_by_offer = state["qualifier_result"]["by_offer"]
+
+    # Step 1: ChromaDB coarse retrieval — restrict to top-K semantically relevant vacancies
+    top_ids = set(retrieve_top_k(candidate, k=LINGUIST_TOP_K))
+
+    by_offer: dict[str, dict] = {}
+    grey_zone_seen: set[str] = set()
+    all_grey_zone: list[str] = []
+
+    for vac in state["vacancies"]:
+        vid = str(vac.id)
+        if qualifier_by_offer.get(vid, {}).get("decision") != "keep":
+            continue
+        if vid not in top_ids:
+            continue  # skip vacancies outside the semantic top-K
+        result = analyse(candidate, vac)
+        by_offer[vid] = result
+        for skill in result.get("grey_zone", []):
+            if skill not in grey_zone_seen:
+                grey_zone_seen.add(skill)
+                all_grey_zone.append(skill)
+
+    return {
+        "linguist_result": {
+            "by_offer":  by_offer,
+            "grey_zone": all_grey_zone,
+        }
+    }
+
 
 def detective_node(state: State) -> dict:
-    # Extract grey-zone skill names from linguist output
-    # grey_zone_skills = state["linguist_result"].get("grey_zone", [])
-    # raw_text = state["candidate"].raw_text
-    # from src.agents.detective import resolve
-    # result = resolve(grey_zone_skills, raw_text)
-    # return {"detective_result": result.model_dump()}
-    raise NotImplementedError
+    from src.agents.detective import resolve
+
+    linguist_result = state["linguist_result"]
+    grey_zone_skills = linguist_result.get("grey_zone", [])
+
+    # aliases: vacancy skill for closest candidate skill (for context extraction)
+    aliases: dict[str, str] = {}
+    for ling in linguist_result["by_offer"].values():
+        for entry in ling.get("skills", []):
+            if entry.get("classification") == "GREY ZONE" and entry.get("best_match"):
+                aliases.setdefault(entry["vacancy_skill"], entry["best_match"])
+
+    det = resolve(grey_zone_skills, state["candidate"].raw_text,
+                  model=state["model"], aliases=aliases)
+
+    # Merge verdicts back into per-offer skill lists and rebuild match/no_match lists
+    updated_by_offer: dict[str, dict] = {}
+    for offer_id, ling in linguist_result["by_offer"].items():
+        updated_skills = [
+            {**e, "classification": det.verdicts[e["vacancy_skill"]].classification}
+            if e["vacancy_skill"] in det.verdicts else e
+            for e in ling.get("skills", [])
+        ]
+        updated_by_offer[offer_id] = {
+            **ling,
+            "skills":    updated_skills,
+            "match":     [s["vacancy_skill"] for s in updated_skills if s["classification"] == "MATCH"],
+            "grey_zone": [s["vacancy_skill"] for s in updated_skills if s["classification"] == "GREY ZONE"],
+            "no_match":  [s["vacancy_skill"] for s in updated_skills if s["classification"] == "NO MATCH"],
+        }
+
+    return {
+        "detective_result": det.model_dump(),
+        "linguist_result": {
+            **linguist_result,
+            "by_offer":  updated_by_offer,
+            "grey_zone": [],  # all resolved, podium never sees GREY ZONE
+        },
+    }
+
 
 def podium_node(state: State) -> dict:
-    # Merge detective verdicts into linguist skills before scoring:
-    #   for skill_entry in linguist_result["skills"]:
-    #       name = skill_entry["vacancy_skill"]
-    #       if name in detective_result["verdicts"]:
-    #           skill_entry["classification"] = detective_result["verdicts"][name]["classification"]
-    # Then call podium.build_entry() — it receives only MATCH / NO MATCH, never GREY ZONE
-    raise NotImplementedError
+    from src.agents.podium import build_entry
+    from src.agents.qualifier import QualifierResult
 
-def visionary_node(_state: State) -> dict:
-    raise NotImplementedError
+    qualifier_by_offer = state["qualifier_result"]["by_offer"]
+    linguist_by_offer  = state["linguist_result"]["by_offer"]
+    prof = _prof_input(state["candidate"])
 
-def publisher_node(_state: State) -> dict:
-    raise NotImplementedError
+    entries = []
+    for vac in state["vacancies"]:
+        vid = str(vac.id)
+        q_dict = qualifier_by_offer.get(vid, {})
+        if q_dict.get("decision") != "keep":
+            continue
+        ling = linguist_by_offer.get(vid, {})
+        qres = QualifierResult.model_validate(q_dict)
+        entry = build_entry(vac, ling, qres, prof, _off_input(vac))
+        if entry is not None:
+            entries.append(entry)
 
+    entries.sort(key=lambda e: e.score_match, reverse=True)
+    return {
+        "podium_result": {
+            "ranking": [e.model_dump() for e in entries[:PODIUM_TOP_N]]
+        }
+    }
+
+
+def visionary_node(state: State) -> dict:
+    from src.agents.visionary import analyse
+    result = analyse(
+        candidate_name=state["candidate"].name,
+        podium_result=state["podium_result"],
+        linguist_result=state["linguist_result"],
+        model=state["model"],
+    )
+    return {"visionary_result": result.model_dump()}
+
+
+def publisher_node(state: State) -> dict:
+    from src.agents.publisher import publish
+    candidate = state["candidate"]
+    result = publish(
+        candidate_name=candidate.name,
+        candidate_contact=candidate.contact,
+        pdf_path=state["pdf_path"],
+        model=state["model"],
+        podium_result=state["podium_result"],
+        visionary_result=state["visionary_result"],
+    )
+    return {"publisher_result": result}
+
+
+# graph 
 
 graph = StateGraph(State)
 
@@ -73,4 +238,4 @@ graph.add_edge("podium",    "visionary")
 graph.add_edge("visionary", "publisher")
 graph.add_edge("publisher", END)
 
-# compiled = graph.compile()  # uncomment once all node stubs are implemented
+compiled = graph.compile()

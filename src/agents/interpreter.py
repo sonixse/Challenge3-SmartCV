@@ -290,8 +290,13 @@ def interpret(pdf_path: str, model: str = "llama3") -> CandidateProfile:
             # normalize education_level, skill names, and language levels before Pydantic validation
             data["education_level"] = _normalize_education(data.get("education_level", ""))
             if "skills" in data:
+                normalized = []
                 for skill in data["skills"]:
+                    if isinstance(skill, str):
+                        skill = {"name": skill, "years": None}
                     skill["name"] = _normalize_skill(skill["name"])
+                    normalized.append(skill)
+                data["skills"] = normalized
             llm_langs = data.get("languages", [])
             for lang in llm_langs:
                 lang["level"] = _normalize_language_level(lang.get("level", ""))
@@ -299,6 +304,14 @@ def interpret(pdf_path: str, model: str = "llama3") -> CandidateProfile:
                 name_key = lang.get("language", "").lower()
                 lang["language"] = _KNOWN_LANGUAGES.get(name_key, lang.get("language", ""))
             data["languages"] = _recover_missing_languages(raw_text, llm_langs)
+
+            # Safe fallbacks for required fields the LLM sometimes omits
+            _VALID_EDU = {"Bachelor's", "Master's", "PhD", "No degree"}
+            if data.get("education_level") not in _VALID_EDU:
+                data["education_level"] = "No degree"
+            data.setdefault("years_experience", 0)
+            data.setdefault("education_field", "Unknown")
+            data.setdefault("skills", [])
 
             profile = CandidateProfile.model_validate(data)
             elapsed = time.time() - t0

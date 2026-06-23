@@ -35,8 +35,7 @@ Two-step process:
 _MODEL = SentenceTransformer("BAAI/bge-small-en-v1.5")
 
 # Thresholds
-MATCH_THRESHOLD    = 0.85   # cosine similarity above this → MATCH
-GREY_ZONE_THRESHOLD = 0.60  # between this and MATCH → GREY ZONE, below → NO MATCH
+from src.config import LINGUIST_MATCH_THRESHOLD as MATCH_THRESHOLD, LINGUIST_GREY_THRESHOLD as GREY_ZONE_THRESHOLD
 
 # ChromaDB
 _CHROMA_CLIENT = chromadb.PersistentClient(path="data/chroma")

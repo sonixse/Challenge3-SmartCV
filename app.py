@@ -26,6 +26,17 @@ _EDU_MAP = {
     "PhD": "Doctorat",
 }
 
+_LEVEL_COLOR = {
+    "native": "#15803d", "c2": "#15803d",
+    "c1": "#1d4ed8", "b2": "#7c3aed",
+    "b1": "#b45309", "a2": "#dc2626", "a1": "#dc2626",
+}
+
+EXAMPLES_DIR = Path("data/raw")
+PROCESSED_DIR = Path(DEFAULT_OUTPUT_DIR)
+UPLOADS_DIR = Path("data/uploads")
+
+#########################################################################
 
 def _candidate_to_qualifier(profile: CandidateProfile) -> dict:
     idiomes = {
@@ -300,12 +311,7 @@ def _render_ranking_cards(top: list[PodiumEntry]) -> None:
                             f"L'oferta demana parlar com a mínim {vac.required_languages} idiomes."
                         )
 
-EXAMPLES_DIR = Path("data/raw")
-PROCESSED_DIR = Path(DEFAULT_OUTPUT_DIR)
-UPLOADS_DIR = Path("data/uploads")
-
 st.set_page_config(page_title="SmartCV", page_icon="🎯", layout="wide")
-
 
 def extract_nn(filename: str) -> str | None:
     m = re.match(r"(\d+)", filename)
@@ -390,14 +396,6 @@ def render_pdf(pdf_path: Path, height: int = 720) -> None:
         f'style="border:1px solid #2a2a2a;border-radius:6px;"></iframe>',
         unsafe_allow_html=True,
     )
-
-
-_LEVEL_COLOR = {
-    "native": "#15803d", "c2": "#15803d",
-    "c1": "#1d4ed8", "b2": "#7c3aed",
-    "b1": "#b45309", "a2": "#dc2626", "a1": "#dc2626",
-}
-
 
 def render_profile(profile: CandidateProfile) -> None:
     meta_parts = []
