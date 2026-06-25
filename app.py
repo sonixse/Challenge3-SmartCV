@@ -304,6 +304,16 @@ def render_ranking(top: list[PodiumEntry]) -> list[PodiumEntry]:
 
     if not top:
         st.warning(t("ranking.no_matches", total=total_offers))
+        st.markdown(
+            "<div style='background:rgba(161,0,255,0.08);border:1px solid rgba(161,0,255,0.25);"
+            "border-left:3px solid #A100FF;border-radius:12px;padding:14px 18px;margin-top:12px;'>"
+            "<p style='color:#A100FF;font-size:0.85rem;font-weight:700;letter-spacing:1px;"
+            "text-transform:uppercase;margin:0 0 5px 0;'>SmartCV Assessor</p>"
+            "<p style='color:rgba(255,255,255,0.75);font-size:0.95rem;margin:0;line-height:1.5;'>"
+            "Ask the assessor below why you got 0 matches and what to improve."
+            "</p></div>",
+            unsafe_allow_html=True,
+        )
         return []
 
     medal = {1: "🥇", 2: "🥈", 3: "🥉"}
@@ -934,7 +944,7 @@ else:
         st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
         # ── Prepare assessor context once ────────────────────────────────
-        _assessor_available = bool(entries and profile)
+        _assessor_available = bool(profile)  # show even with 0 matches
         if _assessor_available:
             from chat.advisor import build_context, advisor_respond
             detective_knowledge = st.session_state.get("detective_knowledge", {})
