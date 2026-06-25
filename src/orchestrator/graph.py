@@ -1,7 +1,12 @@
+import time
 from typing import TypedDict
 from langgraph.graph import StateGraph, END
 from src.schemas.candidate import CandidateProfile
 from src.config import LINGUIST_TOP_K, PODIUM_TOP_N
+
+
+def _log(msg: str) -> None:
+    print(f"[graph] {msg}", flush=True)
 
 # Education level mapping: canonical English to Qualifier's Catalan/Spanish labels
 _EDU_MAP = {
@@ -57,21 +62,29 @@ def interpreter_node(state: State) -> dict:
     from src.agents.interpreter import interpret
     from src.data.load_vacancies import load as load_vacancies
 
+    t0 = time.time()
+    _log(f"interpreter: START — pdf={state['pdf_path']}")
     profile = interpret(state["pdf_path"], model=state["model"])
+    _log(f"interpreter: profile parsed ({len(profile.skills)} skills, {len(profile.languages)} langs)")
     _, vacancies = load_vacancies()
+    _log(f"interpreter: DONE in {time.time()-t0:.1f}s — {len(vacancies)} vacancies loaded")
     return {"candidate": profile, "vacancies": vacancies}
 
 
 def qualifier_node(state: State) -> dict:
     from src.agents.qualifier import qualify
 
+    t0 = time.time()
+    _log(f"qualifier: START — {len(state['vacancies'])} vacancies")
     prof = _prof_input(state["candidate"])
     by_offer = {}
     for vac in state["vacancies"]:
         result = qualify(prof, _off_input(vac))
         by_offer[str(vac.id)] = result.model_dump()
 
-    has_any_keep = any(r["decision"] == "keep" for r in by_offer.values())
+    n_keep = sum(1 for r in by_offer.values() if r["decision"] == "keep")
+    has_any_keep = n_keep > 0
+    _log(f"qualifier: DONE in {time.time()-t0:.2f}s — keep={n_keep}, eliminate={len(by_offer)-n_keep}")
     return {
         "qualifier_result": {
             "pass":     has_any_keep,
@@ -83,29 +96,43 @@ def qualifier_node(state: State) -> dict:
 def linguist_node(state: State) -> dict:
     from src.agents.linguist import analyse, retrieve_top_k
 
+    t0 = time.time()
     candidate          = state["candidate"]
     qualifier_by_offer = state["qualifier_result"]["by_offer"]
+    _log(f"linguist: START — top_k={LINGUIST_TOP_K}")
 
     # Step 1: ChromaDB coarse retrieval — restrict to top-K semantically relevant vacancies
+    t_chroma = time.time()
     top_ids = set(retrieve_top_k(candidate, k=LINGUIST_TOP_K))
+    _log(f"linguist: Chroma top-K retrieved in {time.time()-t_chroma:.2f}s — {len(top_ids)} ids")
 
     by_offer: dict[str, dict] = {}
     grey_zone_seen: set[str] = set()
     all_grey_zone: list[str] = []
 
+    n_analysed = 0
+    t_analyse = time.time()
     for vac in state["vacancies"]:
         vid = str(vac.id)
         if qualifier_by_offer.get(vid, {}).get("decision") != "keep":
             continue
         if vid not in top_ids:
             continue  # skip vacancies outside the semantic top-K
+        ta = time.time()
         result = analyse(candidate, vac)
+        n_analysed += 1
+        if n_analysed % 5 == 0 or n_analysed <= 3:
+            _log(f"linguist:   analysed {n_analysed} vacancies (last vid={vid} in {time.time()-ta:.2f}s)")
         by_offer[vid] = result
         for skill in result.get("grey_zone", []):
             if skill not in grey_zone_seen:
                 grey_zone_seen.add(skill)
                 all_grey_zone.append(skill)
 
+    _log(
+        f"linguist: DONE in {time.time()-t0:.2f}s — analysed={n_analysed}, "
+        f"unique grey zones={len(all_grey_zone)}"
+    )
     return {
         "linguist_result": {
             "by_offer":  by_offer,
@@ -117,8 +144,10 @@ def linguist_node(state: State) -> dict:
 def detective_node(state: State) -> dict:
     from src.agents.detective import resolve
 
+    t0 = time.time()
     linguist_result = state["linguist_result"]
     grey_zone_skills = linguist_result.get("grey_zone", [])
+    _log(f"detective: START — {len(grey_zone_skills)} grey-zone skills to resolve")
 
     # aliases: vacancy skill for closest candidate skill (for context extraction)
     aliases: dict[str, str] = {}
@@ -129,6 +158,11 @@ def detective_node(state: State) -> dict:
 
     det = resolve(grey_zone_skills, state["candidate"].raw_text,
                   model=state["model"], aliases=aliases)
+    _log(
+        f"detective: resolved in {time.time()-t0:.2f}s — "
+        f"match={det.summary.get('resolved_to_match', 0)}, "
+        f"no_match={det.summary.get('resolved_to_no_match', 0)}"
+    )
 
     # Merge verdicts back into per-offer skill lists and rebuild match/no_match lists
     updated_by_offer: dict[str, dict] = {}
@@ -160,6 +194,8 @@ def podium_node(state: State) -> dict:
     from src.agents.podium import build_entry
     from src.agents.qualifier import QualifierResult
 
+    t0 = time.time()
+    _log("podium: START")
     qualifier_by_offer = state["qualifier_result"]["by_offer"]
     linguist_by_offer  = state["linguist_result"]["by_offer"]
     prof = _prof_input(state["candidate"])
@@ -177,6 +213,7 @@ def podium_node(state: State) -> dict:
             entries.append(entry)
 
     entries.sort(key=lambda e: e.score_match, reverse=True)
+    _log(f"podium: DONE in {time.time()-t0:.2f}s — {len(entries)} entries built, top-{PODIUM_TOP_N} returned")
     return {
         "podium_result": {
             "ranking": [e.model_dump() for e in entries[:PODIUM_TOP_N]]
@@ -186,17 +223,22 @@ def podium_node(state: State) -> dict:
 
 def visionary_node(state: State) -> dict:
     from src.agents.visionary import analyse
+    t0 = time.time()
+    _log("visionary: START — 1 Ollama call (no timeout)")
     result = analyse(
         candidate_name=state["candidate"].name,
         podium_result=state["podium_result"],
         linguist_result=state["linguist_result"],
         model=state["model"],
     )
+    _log(f"visionary: DONE in {time.time()-t0:.2f}s")
     return {"visionary_result": result.model_dump()}
 
 
 def publisher_node(state: State) -> dict:
     from src.agents.publisher import publish
+    t0 = time.time()
+    _log("publisher: START")
     candidate = state["candidate"]
     result = publish(
         candidate_name=candidate.name,
@@ -206,6 +248,7 @@ def publisher_node(state: State) -> dict:
         podium_result=state["podium_result"],
         visionary_result=state["visionary_result"],
     )
+    _log(f"publisher: DONE in {time.time()-t0:.2f}s — run_id={result.get('run_id')}")
     return {"publisher_result": result}
 
 

@@ -132,16 +132,33 @@ def resolve(
     """
     _aliases = aliases or {}
     verdicts: dict[str, DetectiveVerdict] = {}
-    with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(grey_zone_skills))) as ex:
+    total = len(grey_zone_skills)
+    workers = min(MAX_WORKERS, total) if total > 0 else 1
+    print(f"[detective] launching {total} grey-zone resolutions with {workers} workers", flush=True)
+    t_start = time.time()
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = {
             ex.submit(_resolve_one, skill, raw_text, model, _aliases.get(skill)): skill
             for skill in grey_zone_skills
         }
         for future in as_completed(futures):
             skill = futures[future]
+            t_skill = time.time()
             try:
                 verdicts[skill] = future.result(timeout=OLLAMA_TIMEOUT)
+                done += 1
+                print(
+                    f"[detective]   [{done}/{total}] '{skill}' → {verdicts[skill].classification} "
+                    f"(elapsed={time.time()-t_start:.1f}s)",
+                    flush=True,
+                )
             except TimeoutError:
+                done += 1
+                print(
+                    f"[detective]   [{done}/{total}] '{skill}' → TIMEOUT after {OLLAMA_TIMEOUT}s",
+                    flush=True,
+                )
                 verdicts[skill] = DetectiveVerdict(
                     classification="NO MATCH",
                     evidence="Ollama call timed out",

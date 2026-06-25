@@ -14,20 +14,13 @@ st.set_page_config(
 
 from src.ui.skill_icons import skill_icon_html
 from src.agents.interpreter import DEFAULT_OUTPUT_DIR, interpret, load_profile, save_profile
-from src.agents.podium import PodiumEntry, build_entry
-from src.agents.qualifier import qualify
+from src.agents.podium import PodiumEntry
+from src.config import MODEL
 from src.data.load_vacancies import load as load_vacancies
 from src.schemas.candidate import CandidateProfile
 from src.schemas.vacancy import Vacancy
 
 # ─── Constants ────────────────────────────────────────────────────────
-
-_EDU_MAP = {
-    "No degree": None,
-    "Bachelor's": "Grau",
-    "Master's": "Master",
-    "PhD": "Doctorat",
-}
 
 _LEVEL_COLOR = {
     "native": "#15803d", "c2": "#15803d",
@@ -39,32 +32,7 @@ EXAMPLES_DIR = Path("data/raw")
 PROCESSED_DIR = Path(DEFAULT_OUTPUT_DIR)
 UPLOADS_DIR   = Path("data/uploads")
 
-# ─── Backend helpers (unchanged logic) ───────────────────────────────
-
-def _candidate_to_qualifier(profile: CandidateProfile) -> dict:
-    idiomes = {
-        l.language.lower(): ("C2" if l.level == "Native" else l.level)
-        for l in profile.languages
-    }
-    return {
-        "experiencia_anys": float(profile.years_experience),
-        "idiomes": idiomes,
-        "formacio_nivell": _EDU_MAP.get(profile.education_level),
-    }
-
-
-def _vacancy_to_qualifier(vac: Vacancy, exp_max: int) -> dict:
-    idioma_req = {
-        r.language.lower(): ("C2" if r.level == "Native" else r.level)
-        for r in vac.required_language_list
-    }
-    return {
-        "experiencia_min": int(vac.years_experience),
-        "experiencia_max": int(exp_max),
-        "idioma_requerit": idioma_req,
-        "formacio_min": _EDU_MAP.get(vac.highest_degree),
-    }
-
+# ─── Backend: LangGraph orchestration ─────────────────────────────────
 
 @st.cache_data(show_spinner=False)
 def _cached_vacancies() -> list[Vacancy]:
@@ -72,96 +40,32 @@ def _cached_vacancies() -> list[Vacancy]:
     return vacs
 
 
-@st.cache_resource(show_spinner=False)
-def _try_linguist():
-    try:
-        from src.agents.linguist import analyse
-        return analyse
-    except Exception:
-        return None
+@st.cache_data(show_spinner=False)
+def _run_graph_cached(pdf_path: str, mtime: float, model: str) -> dict:
+    """Run the full LangGraph pipeline once per CV (cache key: path + mtime).
+    Returns only what the UI needs, not the full Pydantic state."""
+    from src.orchestrator.graph import compiled
+    final_state = compiled.invoke({"pdf_path": pdf_path, "model": model})
+    return {
+        "ranking": final_state["podium_result"]["ranking"],
+        "detective_knowledge": {
+            skill: {"classification": v["classification"], "reasoning": v["reasoning"]}
+            for skill, v in final_state.get("detective_result", {}).get("verdicts", {}).items()
+        },
+    }
 
 
-def _fallback_linguist(candidate: CandidateProfile, vacancy: Vacancy) -> dict:
-    cand_names = [s.name.lower() for s in candidate.skills]
-    items = list(vacancy.skills) + list(vacancy.tools)
-    out_skills = []
-    for req in items:
-        rn = req.name.lower()
-        cls = "NO MATCH"
-        best = None
-        for cn in cand_names:
-            if cn == rn:
-                cls, best = "MATCH", cn
-                break
-            if cn in rn or rn in cn:
-                cls, best = "GREY ZONE", cn
-        out_skills.append({
-            "vacancy_skill": req.name,
-            "best_match": best,
-            "similarity": 0.0,
-            "classification": cls,
-        })
-    return {"skills": out_skills}
-
-
-def _linguist_for(candidate: CandidateProfile, vacancy: Vacancy) -> dict:
-    fn = _try_linguist()
-    if fn is None:
-        return _fallback_linguist(candidate, vacancy)
-    try:
-        return fn(candidate, vacancy)
-    except Exception:
-        return _fallback_linguist(candidate, vacancy)
-
-
-def _run_detective(linguist_result: dict, raw_text: str) -> dict:
-    grey_zone: list[str] = linguist_result.get("grey_zone") or [
-        s["vacancy_skill"]
-        for s in linguist_result.get("skills", [])
-        if s.get("classification") == "GREY ZONE"
-    ]
-    if not grey_zone:
-        return linguist_result
-    try:
-        from src.agents.detective import resolve as detective_resolve
-        aliases = {
-            s["vacancy_skill"]: s["best_match"]
-            for s in linguist_result.get("skills", [])
-            if s.get("classification") == "GREY ZONE" and s.get("best_match")
-        }
-        det = detective_resolve(grey_zone, raw_text, aliases=aliases)
-        for skill_entry in linguist_result.get("skills", []):
-            name = skill_entry["vacancy_skill"]
-            if name in det.verdicts:
-                skill_entry["classification"] = det.verdicts[name].classification
-        knowledge = st.session_state.get("detective_knowledge", {})
-        for skill, verdict in det.verdicts.items():
-            if skill not in knowledge:
-                knowledge[skill] = {
-                    "classification": verdict.classification,
-                    "reasoning": verdict.reasoning,
-                }
-        st.session_state.detective_knowledge = knowledge
-    except Exception:
-        pass
-    return linguist_result
-
-
-def compute_ranking(profile: CandidateProfile, top_n: int = 10) -> list[PodiumEntry]:
-    st.session_state.detective_knowledge = {}
-    prof_input = _candidate_to_qualifier(profile)
-    entries: list[PodiumEntry] = []
-    for vac in _cached_vacancies():
-        off_input = _vacancy_to_qualifier(vac, vac.years_experience + 7)
-        qres = qualify(prof_input, off_input)
-        if qres.decision == "eliminate":
-            continue
-        ling = _linguist_for(profile, vac)
-        ling = _run_detective(ling, profile.raw_text)
-        entry = build_entry(vac, ling, qres, prof_input, off_input)
-        if entry is not None:
-            entries.append(entry)
-    entries.sort(key=lambda e: e.score_match, reverse=True)
+def compute_ranking(
+    profile: CandidateProfile,
+    pdf_path: str,
+    model: str = MODEL,
+    top_n: int = 10,
+) -> list[PodiumEntry]:
+    """Evaluate the candidate by running the full graph (single source of truth)."""
+    mtime = Path(pdf_path).stat().st_mtime
+    result = _run_graph_cached(pdf_path, mtime, model)
+    st.session_state.detective_knowledge = result["detective_knowledge"]
+    entries = [PodiumEntry.model_validate(d) for d in result["ranking"]]
     return entries[:top_n]
 
 
@@ -336,7 +240,7 @@ def render_profile(profile: CandidateProfile) -> None:
         st.caption("No languages detected")
 
 
-def render_ranking(profile: CandidateProfile) -> list[PodiumEntry]:
+def render_ranking(profile: CandidateProfile, pdf_path: str) -> list[PodiumEntry]:
     st.markdown(
         "<p style='font-size:0.78rem;font-weight:700;letter-spacing:1px;"
         "text-transform:uppercase;color:#A100FF;margin:0 0 6px 0'>🏆 Best Job Matches</p>",
@@ -344,7 +248,7 @@ def render_ranking(profile: CandidateProfile) -> list[PodiumEntry]:
     )
 
     with st.spinner("Computing matches…"):
-        top = compute_ranking(profile)
+        top = compute_ranking(profile, pdf_path)
 
     total_offers = len(_cached_vacancies())
 
@@ -812,6 +716,6 @@ else:
 
         with right_col:
             if profile:
-                render_ranking(profile)
+                render_ranking(profile, str(pdf_path))
             else:
                 st.info("Process the CV to see job matches.")
