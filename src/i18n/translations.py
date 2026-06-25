@@ -98,6 +98,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "ranking.sig_exp":       "Experience",
     "ranking.sig_edu":       "Education",
 
+    # Offer details dropdown
+    "offer.details":         "See full offer details",
+    "offer.must":            "Must-have skills",
+    "offer.nice":            "Nice-to-have",
+    "offer.other":           "Other skills",
+    "offer.tools":           "Tools",
+    "offer.req_langs":       "Required languages",
+    "offer.years_exp":       "≥ {n} years exp.",
+    "offer.internship_yes":  "Internship available",
+    "offer.internship_no":   "No internship",
+    "offer.id":              "Offer ID #{id}",
+
     # SmartCV Assessor
     "assessor.title":          "SmartCV Assessor",
     "assessor.fullscreen":     "SmartCV Assessor — Full Screen",
@@ -206,6 +218,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "ranking.sig_exp":  "Experiencia",
     "ranking.sig_edu":  "Educación",
 
+    "offer.details":        "Ver detalles completos de la oferta",
+    "offer.must":           "Skills imprescindibles",
+    "offer.nice":           "Skills deseables",
+    "offer.other":          "Otras skills",
+    "offer.tools":          "Herramientas",
+    "offer.req_langs":      "Idiomas requeridos",
+    "offer.years_exp":      "≥ {n} años exp.",
+    "offer.internship_yes": "Prácticas disponibles",
+    "offer.internship_no":  "Sin prácticas",
+    "offer.id":             "Oferta #{id}",
+
     "assessor.title":          "SmartCV Assessor",
     "assessor.fullscreen":     "SmartCV Assessor — Pantalla completa",
     "assessor.desc":           "Pregunta por qué un match es bajo o cómo mejorar tu perfil.",
@@ -310,6 +333,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "ranking.sig_lang": "Idioma",
     "ranking.sig_exp":  "Experiència",
     "ranking.sig_edu":  "Educació",
+
+    "offer.details":        "Veure detalls complets de l'oferta",
+    "offer.must":           "Skills imprescindibles",
+    "offer.nice":           "Skills desitjables",
+    "offer.other":          "Altres skills",
+    "offer.tools":          "Eines",
+    "offer.req_langs":      "Idiomes requerits",
+    "offer.years_exp":      "≥ {n} anys exp.",
+    "offer.internship_yes": "Pràctiques disponibles",
+    "offer.internship_no":  "Sense pràctiques",
+    "offer.id":             "Oferta #{id}",
 
     "assessor.title":          "SmartCV Assessor",
     "assessor.fullscreen":     "SmartCV Assessor — Pantalla completa",

@@ -383,6 +383,73 @@ def render_ranking(top: list[PodiumEntry]) -> list[PodiumEntry]:
                 for f in entry.flags
             ) + "</div>"
 
+        # ── Expandable details: full vacancy info (i18n) ──────────
+        details_html = ""
+        if vac:
+            def _chip(text: str, bg: str, fg: str, border: str | None = None) -> str:
+                bd = f"border:1px solid {border};" if border else ""
+                return (
+                    f"<span style='display:inline-block;background:{bg};color:{fg};{bd}"
+                    f"border-radius:8px;padding:3px 10px;margin:3px 5px 3px 0;"
+                    f"font-size:0.78rem;font-weight:600'>{text}</span>"
+                )
+
+            must_skills  = [s for s in vac.skills if s.type == "must_have"   and s.name.lower() != "languages"]
+            nice_skills  = [s for s in vac.skills if s.type == "nice_to_have"]
+            other_skills = [s for s in vac.skills if s.type is None          and s.name.lower() != "languages"]
+
+            sections: list[str] = []
+
+            meta_chips = [
+                _chip(t("offer.years_exp", n=vac.years_experience),
+                      "rgba(255,255,255,0.05)", "#E5E7EB", "rgba(255,255,255,0.1)"),
+                _chip(vac.highest_degree,
+                      "rgba(255,255,255,0.05)", "#E5E7EB", "rgba(255,255,255,0.1)"),
+                _chip(t("offer.internship_yes") if vac.has_internship else t("offer.internship_no"),
+                      "rgba(255,255,255,0.05)", "#E5E7EB", "rgba(255,255,255,0.1)"),
+                _chip(t("offer.id", id=vac.id),
+                      "rgba(255,255,255,0.05)", "#9CA3AF", "rgba(255,255,255,0.1)"),
+            ]
+            sections.append(f"<div style='margin-top:6px'>{''.join(meta_chips)}</div>")
+
+            def _block(label_key: str, color: str, chips_html: str) -> str:
+                return (
+                    f"<div style='margin-top:10px'>"
+                    f"<div style='font-size:0.7rem;font-weight:800;letter-spacing:1.5px;"
+                    f"text-transform:uppercase;color:{color};margin-bottom:4px'>{t(label_key)}</div>"
+                    f"<div>{chips_html}</div></div>"
+                )
+
+            if must_skills:
+                chips = "".join(_chip(s.name, "rgba(161,0,255,0.18)", "#D8B4FE", "rgba(161,0,255,0.4)") for s in must_skills)
+                sections.append(_block("offer.must", "#A100FF", chips))
+            if nice_skills:
+                chips = "".join(_chip(s.name, "rgba(99,102,241,0.12)", "#A5B4FC", "rgba(99,102,241,0.3)") for s in nice_skills)
+                sections.append(_block("offer.nice", "#818CF8", chips))
+            if other_skills:
+                chips = "".join(_chip(s.name, "rgba(255,255,255,0.06)", "#D1D5DB", "rgba(255,255,255,0.12)") for s in other_skills)
+                sections.append(_block("offer.other", "#9CA3AF", chips))
+            if vac.tools:
+                chips = "".join(_chip(tl.name, "rgba(34,197,94,0.12)", "#86EFAC", "rgba(34,197,94,0.3)") for tl in vac.tools)
+                sections.append(_block("offer.tools", "#4ADE80", chips))
+            if vac.required_language_list:
+                chips = "".join(
+                    _chip(f"{l.language} · {l.level}", "rgba(59,130,246,0.14)", "#93C5FD", "rgba(59,130,246,0.35)")
+                    for l in vac.required_language_list
+                )
+                sections.append(_block("offer.req_langs", "#60A5FA", chips))
+
+            details_html = (
+                "<details style='margin-top:14px;border-top:1px dashed rgba(255,255,255,0.1);padding-top:10px'>"
+                "<summary style='cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;"
+                "font-size:0.78rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;"
+                "color:#A100FF;outline:none'>"
+                f"<span style='font-size:0.9rem'>▸</span> {t('offer.details')}"
+                "</summary>"
+                f"<div style='margin-top:8px'>{''.join(sections)}</div>"
+                "</details>"
+            )
+
         delay = (rank - 1) * 0.07
 
         _medal_border = {
@@ -439,6 +506,7 @@ def render_ranking(top: list[PodiumEntry]) -> list[PodiumEntry]:
             # signals row
             f"<div style='display:flex;gap:8px;flex-wrap:wrap'>{signals}</div>"
             f"{flags_html}"
+            f"{details_html}"
             f"</div>"
         )
 
