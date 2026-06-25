@@ -286,19 +286,10 @@ def podium_node(state: State) -> dict:
         q_dict = qualifier_by_offer.get(vid, {})
         if q_dict.get("decision") != "keep":
             continue
-<<<<<<< HEAD
-        ling = linguist_by_offer.get(vid)
-        if not ling:
-            continue  # not in Chroma top-K, no semantic analysis available
-=======
-        # Skip vacancies the Linguist never analysed (outside Chroma top-K):
-        # building entries with score_semantic=0 added noise without affecting
-        # the visible top-N.
         if vid not in linguist_by_offer:
             skipped_unanalysed += 1
             continue
         ling = linguist_by_offer[vid]
->>>>>>> refs/remotes/origin/main
         qres = QualifierResult.model_validate(q_dict)
         entry = build_entry(vac, ling, qres, prof, _off_input(vac))
         if entry is not None:
