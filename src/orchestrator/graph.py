@@ -295,7 +295,7 @@ def podium_node(state: State) -> dict:
         if entry is not None:
             entries.append(entry)
 
-    entries.sort(key=lambda e: e.score_match, reverse=True)
+    entries.sort(key=lambda e: (e.score_match, e.score_semantic), reverse=True)
     _log(
         f"podium: DONE in {time.time()-t0:.2f}s — {len(entries)} entries built, "
         f"skipped {skipped_unanalysed} unanalysed (kept by Qualifier but outside Linguist top-K), "

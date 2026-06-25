@@ -190,5 +190,5 @@ def rank(
         if entry is not None:
             entries.append(entry)
 
-    entries.sort(key=lambda e: e.score_match, reverse=True)
+    entries.sort(key=lambda e: (e.score_match, e.score_semantic), reverse=True)
     return entries[:top_n]
