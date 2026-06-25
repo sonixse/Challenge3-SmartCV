@@ -3,7 +3,6 @@ data/kaggle/
 data/chroma/
 data/processed/
 data/uploads/
-data/smartcv.db
 
 # Python
 __pycache__/

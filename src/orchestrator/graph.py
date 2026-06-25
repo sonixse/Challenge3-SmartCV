@@ -329,7 +329,6 @@ def publisher_node(state: State) -> dict:
     candidate = state["candidate"]
     result = publish(
         candidate_name=candidate.name,
-        candidate_contact=candidate.contact,
         pdf_path=state["pdf_path"],
         model=state["model"],
         podium_result=state["podium_result"],

@@ -20,7 +20,6 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
             CREATE TABLE IF NOT EXISTS runs (
                 id                INTEGER PRIMARY KEY AUTOINCREMENT,
                 candidate_name    TEXT    NOT NULL,
-                candidate_contact TEXT,
                 pdf_path          TEXT,
                 model             TEXT,
                 best_fit_role     TEXT,
@@ -37,7 +36,6 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
 
 def save_run(
     candidate_name:    str,
-    candidate_contact: str | None,
     pdf_path:          str,
     model:             str,
     podium_result:     dict,
@@ -57,15 +55,14 @@ def save_run(
         cursor = conn.execute(
             """
             INSERT INTO runs (
-                candidate_name, candidate_contact, pdf_path, model,
+                candidate_name, pdf_path, model,
                 best_fit_role, best_fit_score,
                 coaching, top_gaps_json, strengths_json, ranking_json,
                 created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 candidate_name,
-                candidate_contact,
                 pdf_path,
                 model,
                 visionary_result.get("best_fit_role", best.get("role")),

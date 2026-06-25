@@ -9,7 +9,6 @@ from src.db.sqlite import save_run, DEFAULT_DB_PATH
 
 def publish(
     candidate_name:    str,
-    candidate_contact: str | None,
     pdf_path:          str,
     model:             str,
     podium_result:     dict,
@@ -31,7 +30,6 @@ def publish(
     """
     run_id = save_run(
         candidate_name=candidate_name,
-        candidate_contact=candidate_contact,
         pdf_path=pdf_path,
         model=model,
         podium_result=podium_result,
