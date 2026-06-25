@@ -16,6 +16,36 @@ _EDU_MAP = {
     "PhD":        "Doctorat",
 }
 
+# Language name normalization: non-English names → canonical English key
+# (vacancies always use English names; CVs may use native-language names)
+_LANG_NORM: dict[str, str] = {
+    # Spanish
+    "español": "spanish", "castellano": "spanish", "espanol": "spanish",
+    # English
+    "inglés": "english", "ingles": "english", "anglès": "english", "angles": "english",
+    # French
+    "français": "french", "frances": "french", "francés": "french", "frances": "french",
+    # German
+    "deutsch": "german", "alemán": "german", "aleman": "german", "alemany": "german",
+    # Catalan
+    "català": "catalan", "catala": "catalan",
+    # Italian
+    "italiano": "italian",
+    # Portuguese
+    "português": "portuguese", "portugues": "portuguese",
+    # Chinese
+    "中文": "chinese", "mandarin": "chinese", "mandarín": "chinese",
+    # Arabic
+    "عربي": "arabic", "árabe": "arabic", "arabe": "arabic",
+    # Dutch
+    "nederlands": "dutch", "holandés": "dutch",
+}
+
+
+def _norm_lang(name: str) -> str:
+    """Normalize a language name to its canonical lowercase English form."""
+    return _LANG_NORM.get(name.lower(), name.lower())
+
 
 class State(TypedDict):
     # --- initial inputs (required when invoking the compiled graph) ---
@@ -38,7 +68,7 @@ def _prof_input(candidate: CandidateProfile) -> dict:
     return {
         "experiencia_anys": float(candidate.years_experience),
         "idiomes": {
-            lang.language.lower(): ("C2" if lang.level == "Native" else lang.level)
+            _norm_lang(lang.language): ("C2" if lang.level == "Native" else lang.level)
             for lang in candidate.languages
         },
         "formacio_nivell": _EDU_MAP.get(candidate.education_level),
@@ -62,11 +92,16 @@ def interpreter_node(state: State) -> dict:
     from src.agents.interpreter import interpret
     from src.data.load_vacancies import load as load_vacancies
 
+    _, vacancies = load_vacancies()
+
+    if state.get("candidate") is not None:
+        _log(f"interpreter: SKIP — profile pre-loaded ({state['candidate'].name})")
+        return {"vacancies": vacancies}
+
     t0 = time.time()
     _log(f"interpreter: START — pdf={state['pdf_path']}")
     profile = interpret(state["pdf_path"], model=state["model"])
     _log(f"interpreter: profile parsed ({len(profile.skills)} skills, {len(profile.languages)} langs)")
-    _, vacancies = load_vacancies()
     _log(f"interpreter: DONE in {time.time()-t0:.1f}s — {len(vacancies)} vacancies loaded")
     return {"candidate": profile, "vacancies": vacancies}
 
@@ -106,6 +141,14 @@ def linguist_node(state: State) -> dict:
     top_ids = set(retrieve_top_k(candidate, k=LINGUIST_TOP_K))
     _log(f"linguist: Chroma top-K retrieved in {time.time()-t_chroma:.2f}s — {len(top_ids)} ids")
 
+    keep_ids = {vid for vid, r in qualifier_by_offer.items() if r.get("decision") == "keep"}
+    filtered_ids = top_ids & keep_ids
+
+    # If the semantic filter leaves too few candidates (ChromaDB top-K misses the kept offers),
+    # fall back to analysing all kept vacancies without the ChromaDB filter.
+    use_chroma_filter = len(filtered_ids) >= 5
+    _log(f"linguist: chroma∩keep={len(filtered_ids)} — {'using filter' if use_chroma_filter else 'FALLBACK: analysing all keeps'}")
+
     by_offer: dict[str, dict] = {}
     grey_zone_seen: set[str] = set()
     all_grey_zone: list[str] = []
@@ -116,8 +159,8 @@ def linguist_node(state: State) -> dict:
         vid = str(vac.id)
         if qualifier_by_offer.get(vid, {}).get("decision") != "keep":
             continue
-        if vid not in top_ids:
-            continue  # skip vacancies outside the semantic top-K
+        if use_chroma_filter and vid not in top_ids:
+            continue  # skip vacancies outside the semantic top-K only when filter is reliable
         ta = time.time()
         result = analyse(candidate, vac)
         n_analysed += 1
@@ -206,7 +249,9 @@ def podium_node(state: State) -> dict:
         q_dict = qualifier_by_offer.get(vid, {})
         if q_dict.get("decision") != "keep":
             continue
-        ling = linguist_by_offer.get(vid, {})
+        ling = linguist_by_offer.get(vid)
+        if not ling:
+            continue  # not in Chroma top-K, no semantic analysis available
         qres = QualifierResult.model_validate(q_dict)
         entry = build_entry(vac, ling, qres, prof, _off_input(vac))
         if entry is not None:

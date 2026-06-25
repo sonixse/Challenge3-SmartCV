@@ -34,20 +34,25 @@ UPLOADS_DIR   = Path("data/uploads")
 
 # ─── Backend: LangGraph orchestration ─────────────────────────────────
 
-@st.cache_data(show_spinner=False)
+@st.cache_resource(show_spinner=False)
 def _cached_vacancies() -> list[Vacancy]:
     _, vacs = load_vacancies()
     return vacs
 
 
 @st.cache_data(show_spinner=False)
-def _run_graph_cached(pdf_path: str, mtime: float, model: str) -> dict:
+def _run_graph_cached(pdf_path: str, mtime: float, model: str, candidate_json: str | None = None) -> dict:
     """Run the full LangGraph pipeline once per CV (cache key: path + mtime).
+    If candidate_json is provided, the interpreter node is skipped (~8-10s saved).
     Returns only what the UI needs, not the full Pydantic state."""
     from src.orchestrator.graph import compiled
-    final_state = compiled.invoke({"pdf_path": pdf_path, "model": model})
+    invoke_input: dict = {"pdf_path": pdf_path, "model": model}
+    if candidate_json is not None:
+        invoke_input["candidate"] = CandidateProfile.model_validate_json(candidate_json)
+    final_state = compiled.invoke(invoke_input)
     return {
-        "ranking": final_state["podium_result"]["ranking"],
+        "candidate": final_state["candidate"].model_dump(),
+        "ranking": final_state.get("podium_result", {}).get("ranking", []),
         "detective_knowledge": {
             skill: {"classification": v["classification"], "reasoning": v["reasoning"]}
             for skill, v in final_state.get("detective_result", {}).get("verdicts", {}).items()
@@ -56,21 +61,81 @@ def _run_graph_cached(pdf_path: str, mtime: float, model: str) -> dict:
 
 
 def compute_ranking(
-    profile: CandidateProfile,
     pdf_path: str,
     model: str = MODEL,
     top_n: int = 10,
-) -> list[PodiumEntry]:
-    """Evaluate the candidate by running the full graph (single source of truth)."""
+    candidate: CandidateProfile | None = None,
+) -> tuple[list[PodiumEntry], CandidateProfile]:
+    """Evaluate the candidate by running the full graph (single source of truth).
+    Passes pre-loaded candidate to skip the interpreter node if already available."""
     mtime = Path(pdf_path).stat().st_mtime
-    result = _run_graph_cached(pdf_path, mtime, model)
+    candidate_json = candidate.model_dump_json() if candidate else None
+    result = _run_graph_cached(pdf_path, mtime, model, candidate_json)
     st.session_state.detective_knowledge = result["detective_knowledge"]
     entries = [PodiumEntry.model_validate(d) for d in result["ranking"]]
-    return entries[:top_n]
+    profile = CandidateProfile.model_validate(result["candidate"])
+    return entries[:top_n], profile
 
 
 def _vacancy_by_id(vid: int) -> Vacancy | None:
     return next((v for v in _cached_vacancies() if v.id == vid), None)
+
+
+def _epic_loader_html() -> str:
+    return (
+        "<style>"
+        "@keyframes titleGlow{"
+        "0%,100%{text-shadow:0 0 30px rgba(161,0,255,.6);}"
+        "50%{text-shadow:0 0 60px rgba(161,0,255,1),0 0 120px rgba(161,0,255,.3);}}"
+        "@keyframes fadeIn{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}"
+        "@keyframes spinRing{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}"
+        "@keyframes centerPulse{"
+        "0%,100%{box-shadow:0 0 0 0 rgba(161,0,255,.6);transform:translate(-50%,-50%) scale(1);}"
+        "50%{box-shadow:0 0 0 12px rgba(161,0,255,0);transform:translate(-50%,-50%) scale(1.2);}}"
+        "@keyframes orbit1{from{transform:rotate(0deg) translateX(38px) rotate(0deg);}to{transform:rotate(360deg) translateX(38px) rotate(-360deg);}}"
+        "@keyframes orbit2{from{transform:rotate(120deg) translateX(28px) rotate(-120deg);}to{transform:rotate(480deg) translateX(28px) rotate(-480deg);}}"
+        "@keyframes orbit3{from{transform:rotate(240deg) translateX(20px) rotate(-240deg);}to{transform:rotate(-120deg) translateX(20px) rotate(120deg);}}"
+        "@keyframes msgCycle{"
+        "0%{opacity:0;transform:translateY(5px);}"
+        "3%{opacity:1;transform:translateY(0);}"
+        "22%{opacity:1;transform:translateY(0);}"
+        "25%{opacity:0;transform:translateY(-4px);}"
+        "100%{opacity:0;}}"
+        "</style>"
+        "<div style='position:fixed;top:0;left:0;width:100vw;height:100vh;"
+        "background:#0D0D0D;z-index:99999;"
+        "display:flex;flex-direction:column;align-items:center;justify-content:center;'>"
+        "<div style='animation:fadeIn .6s ease both;text-align:center;'>"
+        "<div style='display:inline-flex;align-items:center;gap:28px;margin-bottom:20px;'>"
+        "<div style='font-size:1.1rem;font-weight:700;letter-spacing:5px;"
+        "text-transform:uppercase;color:#A100FF;'>SmartCV</div>"
+        "<span style='color:rgba(255,255,255,0.15);font-size:1.4rem;'>|</span>"
+        "<h1 style='font-size:2.4rem;font-weight:900;margin:0;line-height:1;"
+        "background:linear-gradient(90deg,#fff 0%,#A100FF 100%);"
+        "-webkit-background-clip:text;-webkit-text-fill-color:transparent;"
+        "background-clip:text;animation:titleGlow 2.5s ease-in-out infinite;'>7 Agents Working</h1>"
+        "</div>"
+        "<p style='color:#4B5563;font-size:1.25rem;margin:0 0 52px 0;'>"
+        "Analysing your CV against 1,000 job offers</p>"
+        # ── Orbiting geometry ─────────────────────────────────────────
+        "<div style='position:relative;width:160px;height:160px;margin:0 auto 52px auto;'>"
+        "<div style='position:absolute;inset:0;border-radius:50%;border:2px dashed rgba(161,0,255,0.4);animation:spinRing 4s linear infinite;'></div>"
+        "<div style='position:absolute;inset:20px;border-radius:50%;border:2px dashed rgba(161,0,255,0.2);animation:spinRing 3s linear infinite reverse;'></div>"
+        "<div style='position:absolute;top:50%;left:50%;width:22px;height:22px;margin:-11px;border-radius:50%;background:#A100FF;animation:centerPulse 1.5s ease-in-out infinite;'></div>"
+        "<div style='position:absolute;top:50%;left:50%;width:14px;height:14px;margin:-7px;border-radius:50%;background:#A100FF;animation:orbit1 2.2s linear infinite;'></div>"
+        "<div style='position:absolute;top:50%;left:50%;width:11px;height:11px;margin:-5.5px;border-radius:50%;background:#7C3AED;animation:orbit2 3.1s linear infinite;'></div>"
+        "<div style='position:absolute;top:50%;left:50%;width:8px;height:8px;margin:-4px;border-radius:50%;background:#C084FC;animation:orbit3 1.8s linear infinite reverse;'></div>"
+        "</div>"
+        # ── Cycling messages ──────────────────────────────────────────
+        "<div style='position:relative;height:24px;width:480px;margin:0 auto;'>"
+        "<div style='position:absolute;width:100%;text-align:center;font-size:1rem;font-weight:700;letter-spacing:2px;color:#6B7280;animation:msgCycle 24s linear infinite 0s;'>READING YOUR CV &middot; PLEASE WAIT</div>"
+        "<div style='position:absolute;width:100%;text-align:center;font-size:1rem;font-weight:700;letter-spacing:2px;color:#6B7280;animation:msgCycle 24s linear infinite -18s;'>MATCHING YOUR SKILLS &middot; HANG TIGHT</div>"
+        "<div style='position:absolute;width:100%;text-align:center;font-size:1rem;font-weight:700;letter-spacing:2px;color:#6B7280;animation:msgCycle 24s linear infinite -12s;'>RESOLVING GREY ZONES &middot; ALMOST THERE</div>"
+        "<div style='position:absolute;width:100%;text-align:center;font-size:1rem;font-weight:700;letter-spacing:2px;color:#6B7280;animation:msgCycle 24s linear infinite -6s;'>RANKING YOUR MATCHES &middot; FINAL STEP</div>"
+        "</div>"
+        "</div>"
+        "</div>"
+    )
 
 # ─── File / cache helpers ─────────────────────────────────────────────
 
@@ -159,67 +224,72 @@ def render_pdf(pdf_path: Path, height: int = 520) -> None:
 # ─── UI render helpers ────────────────────────────────────────────────
 
 def render_profile(profile: CandidateProfile) -> None:
-    exp_col, edu_col = st.columns([1, 2])
-    with exp_col:
-        st.markdown(
-            "<div style='background:linear-gradient(135deg,#4F46E5,#7C3AED);color:white;"
-            "border-radius:14px;padding:16px;text-align:center;"
-            "min-height:110px;display:flex;flex-direction:column;justify-content:center'>"
-            "<div style='font-size:0.76rem;font-weight:700;letter-spacing:1px;"
-            "text-transform:uppercase;margin-bottom:4px'>💼 Experience</div>"
-            f"<div style='font-size:2.8rem;font-weight:900;line-height:1'>{profile.years_experience}</div>"
-            "<div style='font-size:0.78rem;opacity:.85;margin-top:2px'>years</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-    with edu_col:
-        st.markdown(
-            "<div style='background:linear-gradient(135deg,#065F46,#059669);color:white;"
-            "border-radius:14px;padding:16px 18px;"
-            "min-height:110px;display:flex;flex-direction:column;justify-content:center'>"
-            "<div style='font-size:0.76rem;font-weight:700;letter-spacing:1px;"
-            "text-transform:uppercase;margin-bottom:6px'>🎓 Education</div>"
-            f"<div style='font-size:1.25rem;font-weight:800;line-height:1.2'>{profile.education_level}</div>"
-            f"<div style='font-size:0.82rem;opacity:.85;margin-top:4px'>{profile.education_field}</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-
-    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-
+    # ── Experience + Education (mateixa fila) ────────────────────────
     st.markdown(
-        "<p style='font-size:0.78rem;font-weight:700;letter-spacing:1px;"
-        "text-transform:uppercase;color:#A100FF;margin:0 0 6px 0'>🛠 Skills</p>",
+        "<div style='display:flex;gap:40px;align-items:flex-start;margin-top:24px;margin-bottom:28px'>"
+
+        # Experience
+        "<div>"
+        "<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
+        "color:#A100FF;margin:0 0 14px 0'>Experience</p>"
+        "<div style='display:inline-flex;align-items:center;gap:14px;"
+        "background:#1A1A1A;border-radius:18px;padding:16px 26px;"
+        "border:1px solid rgba(255,255,255,0.1)'>"
+        f"<span style='font-weight:900;font-size:2.8rem;color:white;line-height:1'>{profile.years_experience}</span>"
+        "<span style='font-weight:700;font-size:1rem;color:#9CA3AF;letter-spacing:2px;text-transform:uppercase'>years</span>"
+        "</div></div>"
+
+        # Education
+        "<div>"
+        "<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
+        "color:#A100FF;margin:0 0 14px 0'>Education</p>"
+        "<div style='display:inline-flex;align-items:center;gap:14px;"
+        "background:#1A1A1A;border-radius:18px;padding:16px 26px;"
+        "border:1px solid rgba(255,255,255,0.1)'>"
+        f"<span style='font-weight:800;font-size:1.35rem;color:white'>{profile.education_level}</span>"
+        f"<span style='background:rgba(161,0,255,0.22);color:#D8B4FE;border-radius:9px;"
+        f"padding:5px 14px;font-size:0.95rem;font-weight:800'>{profile.education_field}</span>"
+        "</div></div>"
+
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Skills ───────────────────────────────────────────────────────
+    st.markdown(
+        "<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
+        "color:#A100FF;margin:0 0 14px 0'>Skills</p>",
         unsafe_allow_html=True,
     )
     if profile.skills:
         icons_html = "".join(
             f"<span title='{s.name}' style='display:inline-flex;align-items:center;"
-            f"justify-content:center;width:30px;height:30px;margin:2px;"
-            f"background:#1F1A2E;border-radius:7px'>"
-            f"{skill_icon_html(s.name, size=18)}</span>"
+            f"justify-content:center;width:56px;height:56px;margin:4px;"
+            f"background:#1A1530;border-radius:14px;border:1px solid rgba(161,0,255,0.2)'>"
+            f"{skill_icon_html(s.name, size=32)}</span>"
             for s in profile.skills
-            if skill_icon_html(s.name, size=18)
+            if skill_icon_html(s.name, size=32)
         )
         if icons_html:
-            st.markdown(f"<div style='margin-bottom:6px'>{icons_html}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='margin-bottom:18px'>{icons_html}</div>", unsafe_allow_html=True)
 
         tags = "".join(
-            f"<span style='display:inline-block;background:rgba(161,0,255,0.12);color:#C084FC;"
-            f"border:1px solid rgba(161,0,255,0.3);border-radius:20px;padding:4px 12px;"
-            f"margin:3px 4px 3px 0;font-size:0.82rem;font-weight:600'>"
-            f"{s.name}{(' · ' + str(s.years) + 'y') if s.years is not None else ''}</span>"
+            f"<span style='display:inline-block;background:rgba(161,0,255,0.14);color:#D8B4FE;"
+            f"border:1px solid rgba(161,0,255,0.35);border-radius:24px;padding:7px 24px;"
+            f"margin:5px 8px 5px 0;font-size:1.4rem;font-weight:700'>"
+            f"{s.name}{(' &nbsp;·&nbsp; ' + str(s.years) + 'y') if s.years is not None else ''}</span>"
             for s in profile.skills
         )
-        st.markdown(f"<div style='line-height:2.4'>{tags}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='line-height:3.2'>{tags}</div>", unsafe_allow_html=True)
     else:
         st.caption("No skills detected")
 
-    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-
+    # ── Languages ────────────────────────────────────────────────────
+    st.markdown("<div style='height:36px'></div>", unsafe_allow_html=True)
     st.markdown(
-        "<p style='font-size:0.78rem;font-weight:700;letter-spacing:1px;"
-        "text-transform:uppercase;color:#A100FF;margin:0 0 6px 0'>🌐 Languages</p>",
+        "<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
+        "color:#A100FF;margin:0 0 14px 0'>"
+        " Languages</p>",
         unsafe_allow_html=True,
     )
     if profile.languages:
@@ -227,12 +297,12 @@ def render_profile(profile: CandidateProfile) -> None:
         for lang in profile.languages:
             color = _LEVEL_COLOR.get(lang.level.lower().replace(" ", ""), "#555")
             lang_parts.append(
-                f"<div style='display:inline-flex;align-items:center;gap:6px;"
-                f"background:#1A1A1A;border-radius:10px;padding:5px 12px;"
-                f"margin:3px 5px 3px 0;border:1px solid rgba(255,255,255,0.1)'>"
-                f"<span style='font-weight:700;font-size:0.88rem;color:white'>{lang.language}</span>"
-                f"<span style='background:{color};color:white;border-radius:5px;"
-                f"padding:2px 7px;font-size:0.7rem;font-weight:700'>{lang.level}</span>"
+                f"<div style='display:inline-flex;align-items:center;gap:14px;"
+                f"background:#1A1A1A;border-radius:18px;padding:16px 26px;"
+                f"margin:5px 10px 5px 0;border:1px solid rgba(255,255,255,0.1)'>"
+                f"<span style='font-weight:800;font-size:1.35rem;color:white'>{lang.language}</span>"
+                f"<span style='background:{color};color:white;border-radius:9px;"
+                f"padding:5px 14px;font-size:0.95rem;font-weight:800'>{lang.level}</span>"
                 f"</div>"
             )
         st.markdown(f"<div>{''.join(lang_parts)}</div>", unsafe_allow_html=True)
@@ -240,17 +310,20 @@ def render_profile(profile: CandidateProfile) -> None:
         st.caption("No languages detected")
 
 
-def render_ranking(profile: CandidateProfile, pdf_path: str) -> list[PodiumEntry]:
+def render_ranking(top: list[PodiumEntry]) -> list[PodiumEntry]:
+    total_offers = len(_cached_vacancies())
+
     st.markdown(
-        "<p style='font-size:0.78rem;font-weight:700;letter-spacing:1px;"
-        "text-transform:uppercase;color:#A100FF;margin:0 0 6px 0'>🏆 Best Job Matches</p>",
+        "<div style='margin-bottom:20px;'>"
+        "<div style='font-size:2.2rem;font-weight:900;color:white;line-height:1;margin-bottom:6px;"
+        "background:linear-gradient(90deg,#ffffff,#A100FF);"
+        "-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'>"
+        "🏆 Best Job Matches</div>"
+        f"<div style='font-size:0.9rem;color:#6B7280;font-weight:500;letter-spacing:.5px'>"
+        f"Top {len(top)} of {total_offers} offers · sorted by AI match score</div>"
+        "</div>",
         unsafe_allow_html=True,
     )
-
-    with st.spinner("Computing matches…"):
-        top = compute_ranking(profile, pdf_path)
-
-    total_offers = len(_cached_vacancies())
 
     if not top:
         st.warning(
@@ -259,76 +332,121 @@ def render_ranking(profile: CandidateProfile, pdf_path: str) -> list[PodiumEntry
         )
         return []
 
-    st.caption(f"Showing {len(top)} of {total_offers} offers · sorted by AI match score")
+    medal = {1: "🥇", 2: "🥈", 3: "🥉"}
 
     def _signal(reason: str | None, label: str) -> str:
         if reason is None:
-            return f"<span style='color:#16a34a;font-size:0.76rem;font-weight:600'>✓ {label}</span>"
+            return (
+                f"<span style='display:inline-flex;align-items:center;gap:5px;"
+                f"background:rgba(22,163,74,0.13);color:#4ade80;border-radius:8px;"
+                f"padding:4px 10px;font-size:0.78rem;font-weight:700'>"
+                f"✓ {label}</span>"
+            )
         short = reason.split("·")[0].strip() if "·" in reason else reason
-        return f"<span style='color:#b45309;font-size:0.76rem'>⚠ {short}</span>"
-
-    cards_html = ""
-    for rank, entry in enumerate(top, start=1):
-        vac = _vacancy_by_id(entry.offer_id)
-
-        signals = (
-            _signal(entry.reasons.language, "Language")
-            + "&nbsp;&nbsp;"
-            + _signal(entry.reasons.experience, "Experience")
-            + "&nbsp;&nbsp;"
-            + _signal(entry.reasons.education, "Education")
+        return (
+            f"<span style='display:inline-flex;align-items:center;gap:5px;"
+            f"background:rgba(217,119,6,0.13);color:#fbbf24;border-radius:8px;"
+            f"padding:4px 10px;font-size:0.78rem;font-weight:700'>"
+            f"⚠ {short}</span>"
         )
 
-        vac_meta = ""
-        if vac is not None:
-            vac_meta = (
-                f"<div style='font-size:0.74rem;color:#9CA3AF;margin-top:1px'>"
-                f"#{vac.id} · ≥{vac.years_experience}y exp · {vac.highest_degree}</div>"
-            )
+    cards_html = "<style>@keyframes cardIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}</style>"
 
+    for rank, entry in enumerate(top, start=1):
+        vac = _vacancy_by_id(entry.offer_id)
         score = entry.score_match
+
         if score >= 70:
-            score_bg = "linear-gradient(135deg,#A100FF,#7C3AED)"
-        elif score >= 50:
-            score_bg = "linear-gradient(135deg,#D97706,#F59E0B)"
+            score_bg  = "linear-gradient(135deg,#A100FF,#7C3AED)"
+            bar_color = "#A100FF"
+        elif score >= 40:
+            score_bg  = "linear-gradient(135deg,#D97706,#F59E0B)"
+            bar_color = "#F59E0B"
         else:
-            score_bg = "linear-gradient(135deg,#DC2626,#EF4444)"
+            score_bg  = "linear-gradient(135deg,#DC2626,#EF4444)"
+            bar_color = "#EF4444"
+
+        rank_label = medal.get(rank, f"#{rank}")
+
+        exp_req = f"≥{vac.years_experience}y" if vac else ""
+        deg_req = vac.highest_degree if vac else ""
+        meta = f"{exp_req} · {deg_req}" if exp_req else ""
+
+        signals = " ".join([
+            _signal(entry.reasons.language,   "Language"),
+            _signal(entry.reasons.experience, "Experience"),
+            _signal(entry.reasons.education,  "Education"),
+        ])
 
         flags_html = ""
         if entry.flags:
-            flags_html = (
-                "<div style='margin-top:4px'>"
-                + "".join(
-                    f"<span style='font-size:0.68rem;background:rgba(161,0,255,0.15);color:#C084FC;"
-                    f"border-radius:5px;padding:1px 6px;margin-right:4px'>{f}</span>"
-                    for f in entry.flags
-                )
-                + "</div>"
-            )
+            flags_html = "<div style='margin-top:8px;display:flex;gap:6px;flex-wrap:wrap'>" + "".join(
+                f"<span style='font-size:0.7rem;background:rgba(161,0,255,0.15);color:#C084FC;"
+                f"border-radius:6px;padding:2px 8px;font-weight:600'>{f}</span>"
+                for f in entry.flags
+            ) + "</div>"
+
+        delay = (rank - 1) * 0.07
+
+        _medal_border = {
+            1: "border:2px solid #FFD700;box-shadow:0 0 22px rgba(255,215,0,0.25);",
+            2: "border:2px solid #C0C0C0;box-shadow:0 0 18px rgba(192,192,192,0.2);",
+            3: "border:2px solid #CD7F32;box-shadow:0 0 18px rgba(205,127,50,0.2);",
+        }.get(rank, "border:1px solid rgba(255,255,255,0.09);")
 
         cards_html += (
-            f"<div style='border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:12px 15px;"
-            f"margin-bottom:9px;background:#1A1A1A;display:flex;gap:12px;align-items:center;'>"
+            f"<div style='{_medal_border}border-radius:22px;"
+            f"padding:16px 20px;margin-bottom:10px;background:#141414;"
+            f"animation:cardIn .4s ease {delay:.2f}s both;'>"
+
+            # top row
+            f"<div style='display:flex;align-items:center;gap:20px;'>"
+
+            # score bubble
             f"<div style='text-align:center;background:{score_bg};color:white;"
-            f"border-radius:11px;padding:9px 12px;min-width:60px;flex-shrink:0;'>"
-            f"<div style='font-size:1.65rem;font-weight:900;line-height:1'>{score}</div>"
-            f"<div style='font-size:0.6rem;opacity:0.85;font-weight:600'>% match</div>"
+            f"border-radius:13px;padding:12px 14px;min-width:72px;flex-shrink:0;"
+            f"box-shadow:0 4px 18px rgba(0,0,0,0.4);'>"
+            f"<div style='font-size:2rem;font-weight:900;line-height:1'>{score}</div>"
+            f"<div style='font-size:0.62rem;opacity:0.9;font-weight:800;letter-spacing:2px;margin-top:2px'>% MATCH</div>"
             f"</div>"
+
+            # title block
             f"<div style='flex:1;min-width:0;'>"
-            f"<div style='font-weight:700;color:#F9FAFB;font-size:0.94rem;"
+            f"<div style='font-size:0.75rem;color:#6B7280;font-weight:600;letter-spacing:.5px;margin-bottom:3px'>"
+            f"{rank_label}"
+            f"</div>"
+            f"<div style='font-size:1.15rem;font-weight:900;color:white;line-height:1.2;"
             f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
-            f"#{rank} — {entry.role} "
-            f"<span style='color:#A100FF;font-size:0.78rem;font-weight:500'>{entry.sector}</span>"
+            f"{entry.role}"
             f"</div>"
-            f"{vac_meta}"
-            f"<div style='margin-top:5px'>{signals}</div>"
+            f"<div style='font-size:0.85rem;color:#A100FF;font-weight:700;margin-top:3px'>"
+            f"{entry.sector}"
+            f"</div>"
+            f"</div>"
+            # meta pill on the right
+            + (f"<div style='flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px;'>"
+            f"<div style='background:#1F1F1F;border:1px solid rgba(255,255,255,0.1);"
+            f"border-radius:12px;padding:8px 16px;text-align:center;'>"
+            f"<div style='font-size:0.85rem;font-weight:700;color:white;white-space:nowrap;'>{meta}</div>"
+            f"</div>"
+            f"</div>" if meta else "<div></div>")
+            + f"</div>"
+
+            # score bar
+            f"<div style='margin:16px 0 12px 0;background:rgba(255,255,255,0.05);"
+            f"border-radius:4px;height:4px;overflow:hidden;'>"
+            f"<div style='width:{score}%;height:100%;background:{bar_color};"
+            f"border-radius:4px;'></div>"
+            f"</div>"
+
+            # signals row
+            f"<div style='display:flex;gap:8px;flex-wrap:wrap'>{signals}</div>"
             f"{flags_html}"
-            f"</div>"
             f"</div>"
         )
 
     st.markdown(
-        f"<div style='max-height:60vh;overflow-y:auto;padding-right:4px'>{cards_html}</div>",
+        f"<div style='max-height:65vh;overflow-y:auto;padding-right:6px'>{cards_html}</div>",
         unsafe_allow_html=True,
     )
     return top
@@ -370,11 +488,18 @@ section[data-testid="stMain"],
     border: none !important;
     border-radius: 10px !important;
     font-weight: 700 !important;
+    font-size: 0.95rem !important;
     letter-spacing: 0.2px !important;
     transition: opacity 0.2s !important;
-    padding: 0.5rem 1.2rem !important;
+    padding: 0.45rem 1rem !important;
 }
 .stButton > button:hover { opacity: 0.82 !important; color: white !important; }
+.stButton > button p,
+.stButton > button span,
+.stButton > button div {
+    font-size: 0.95rem !important;
+    color: white !important;
+}
 
 /* ── File uploader — dark ── */
 [data-testid="stFileUploadDropzone"] {
@@ -396,9 +521,15 @@ section[data-testid="stMain"],
 }
 [data-testid="stTabs"] [data-baseweb="tab"] {
     border-radius: 9px !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
+    font-size: 1.5rem !important;
     color: #9CA3AF !important;
-    padding: 6px 18px !important;
+    padding: 14px 30px !important;
+}
+[data-testid="stTabs"] [data-baseweb="tab"] p,
+[data-testid="stTabs"] [data-baseweb="tab"] span,
+[data-testid="stTabs"] [data-baseweb="tab"] div {
+    font-size: 1.5rem !important;
 }
 [data-testid="stTabs"] [aria-selected="true"] {
     background: #2A2A2A !important;
@@ -449,7 +580,7 @@ section[data-testid="stMain"],
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-for _k, _v in [("selected", None), ("dropdown_v", 0), ("detective_knowledge", {})]:
+for _k, _v in [("selected", None), ("dropdown_v", 0), ("detective_knowledge", {}), ("ranking_requested", False), ("advisor_history", []), ("chat_fullscreen", False)]:
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
@@ -610,8 +741,9 @@ if selection is None:
                 if not target_pdf.exists():
                     target_pdf.write_bytes(uploaded.getbuffer())
                 st.success(f"✅ {uploaded.name} — ready!")
-                if st.button("🚀  Analyse my CV", use_container_width=True, key="btn_process_upload"):
+                if st.button("🚀  Show ranking", use_container_width=True, key="btn_process_upload"):
                     st.session_state.selected = ("upload", stem)
+                    st.session_state.ranking_requested = True
                     st.rerun()
 
         st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
@@ -644,10 +776,41 @@ if selection is None:
                     key=f"cv_dropdown_{st.session_state.dropdown_v}",
                 )
                 if chosen_label:
-                    st.session_state.selected = ("example", label_to_nn[chosen_label])
-                    st.rerun()
+                    if st.button("🚀  Show ranking", use_container_width=True, key="btn_show_example"):
+                        st.session_state.selected = ("example", label_to_nn[chosen_label])
+                        st.session_state.ranking_requested = True
+                        st.rerun()
             else:
                 st.info("No sample CVs found in data/raw/")
+
+    # ── Stats grid (below uploads) ────────────────────────────────────
+    _STATS = [
+        ("1,000",  "Vacancies indexed",  ""),
+        ("7",      "Specialized agents", "Ada &middot; Marie &middot; Alan &middot; Hedy<br>Serena &middot; Steve &middot; Johannes"),
+        ("0",      "Keywords used",      "Pure semantic AI. <br>We match meaning, not words"),
+        ("100%",   "Runs locally",       ""),
+        ("4",      "Evaluation axes",    "Semantic skills &middot; Experience<br>Education &middot; Language"),
+        ("<30s",   "Average analysis",   ""),
+    ]
+    _stat_cells = "".join(
+        f"<div style='background:#0D0D0D;padding:36px 20px;text-align:center;'>"
+        f"<div style='font-size:3.8rem;font-weight:900;line-height:1;margin-bottom:12px;"
+        f"background:linear-gradient(90deg,#ffffff 0%,#A100FF 100%);"
+        f"-webkit-background-clip:text;-webkit-text-fill-color:transparent;"
+        f"background-clip:text;'>{number}</div>"
+        f"<div style='font-size:1rem;font-weight:700;letter-spacing:1.5px;"
+        f"text-transform:uppercase;color:#6B7280;margin-bottom:{'10px' if sub else '0'};'>{label}</div>"
+        + (f"<div style='font-size:1.05rem;color:#6B7280;line-height:1.8;margin-top:10px;font-weight:500;'>{sub}</div>" if sub else "")
+        + f"</div>"
+        for number, label, sub in _STATS
+    )
+    st.markdown(
+        "<div style='display:grid;grid-template-columns:repeat(6,1fr);"
+        "gap:1px;background:rgba(255,255,255,0.07);border-radius:20px;"
+        "overflow:hidden;margin-top:40px;'>"
+        + _stat_cells + "</div>",
+        unsafe_allow_html=True,
+    )
 
 else:
     # ── DETAIL VIEW ───────────────────────────────────────────────────
@@ -668,8 +831,26 @@ else:
             st.rerun()
     else:
         profile = load_cached(cache)
-        if profile is None:
-            profile = run_interpret_with_ui(pdf_path, cache)
+        entries: list[PodiumEntry] = []
+
+        if st.session_state.ranking_requested:
+            _loader = st.empty()
+            _loader.markdown(_epic_loader_html(), unsafe_allow_html=True)
+            try:
+                entries, profile_from_graph = compute_ranking(
+                    str(pdf_path), candidate=profile
+                )
+                if profile is None:
+                    profile = profile_from_graph
+                    save_profile(profile, str(cache))
+            except Exception as e:
+                msg = str(e).lower()
+                if any(tok in msg for tok in ("connect", "refus", "ollama", "11434")):
+                    st.error("Cannot connect to Ollama. Make sure `ollama serve` is running.")
+                else:
+                    st.error(f"Error processing CV: {e}")
+            finally:
+                _loader.empty()
 
         # Top bar: name + back button
         top_l, top_r = st.columns([5, 1])
@@ -694,28 +875,106 @@ else:
                     unsafe_allow_html=True,
                 )
         with top_r:
-            if st.button("← Change CV", use_container_width=True):
+            if st.button("Change CV", use_container_width=True):
                 st.session_state.selected = None
+                st.session_state.ranking_requested = False
+                st.session_state.advisor_history = []
+                st.session_state.chat_fullscreen = False
                 st.session_state.dropdown_v += 1
                 st.rerun()
 
         st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
-        # Two-column layout
-        left_col, right_col = st.columns([1, 1], gap="large")
+        # ── Prepare assessor context once ────────────────────────────────
+        _assessor_available = bool(entries and profile)
+        if _assessor_available:
+            from chat.advisor import build_context, advisor_respond
+            detective_knowledge = st.session_state.get("detective_knowledge", {})
+            _system_prompt = build_context(profile, entries, detective_knowledge)
 
-        with left_col:
-            tab_pdf, tab_data = st.tabs(["📄 Original PDF", "📋 Extracted Profile"])
-            with tab_pdf:
-                render_pdf(pdf_path, height=520)
-            with tab_data:
-                if profile:
-                    render_profile(profile)
-                else:
-                    st.info("No profile data yet — process the CV first.")
+        # ── FULL-SCREEN CHAT MODE ─────────────────────────────────────────
+        if st.session_state.get("chat_fullscreen") and _assessor_available:
+            back_col, title_col = st.columns([1, 5])
+            with back_col:
+                if st.button("← Back to results", use_container_width=True):
+                    st.session_state.chat_fullscreen = False
+                    st.rerun()
+            with title_col:
+                st.markdown(
+                    "<p style='font-size:1.5rem;font-weight:800;letter-spacing:1px;"
+                    "text-transform:uppercase;color:#A100FF;margin:6px 0 0 0;'>"
+                    "SmartCV Assessor — Full Screen</p>",
+                    unsafe_allow_html=True,
+                )
 
-        with right_col:
-            if profile:
-                render_ranking(profile, str(pdf_path))
-            else:
-                st.info("Process the CV to see job matches.")
+            for msg in st.session_state.advisor_history:
+                with st.chat_message(msg["role"]):
+                    st.write(msg["content"])
+
+            if user_input := st.chat_input("Ask anything about your CV or matches…", key="advisor_fs_input"):
+                st.session_state.advisor_history.append({"role": "user", "content": user_input})
+                with st.chat_message("user"):
+                    st.write(user_input)
+                with st.chat_message("assistant"):
+                    with st.spinner("Thinking…"):
+                        try:
+                            reply = advisor_respond(user_input, st.session_state.advisor_history[:-1], _system_prompt)
+                        except Exception as e:
+                            reply = f"Could not connect to Ollama: {e}"
+                    st.write(reply)
+                st.session_state.advisor_history.append({"role": "assistant", "content": reply})
+
+        else:
+            # ── NORMAL TWO-COLUMN LAYOUT ──────────────────────────────────
+            left_col, right_col = st.columns([1, 1], gap="large")
+
+            with left_col:
+                tab_pdf, tab_data = st.tabs(["📄 Original PDF", "📋 Extracted Profile"])
+                with tab_pdf:
+                    render_pdf(pdf_path, height=520)
+                with tab_data:
+                    if profile:
+                        render_profile(profile)
+                    else:
+                        st.info("No profile data yet — process the CV first.")
+
+                # ── SmartCV Assessor (compact, below PDF) ─────────────────
+                if _assessor_available:
+                    hdr_l, hdr_r = st.columns([3, 1])
+                    with hdr_l:
+                        st.markdown(
+                            "<div style='margin-top:24px;margin-bottom:8px;'>"
+                            "<p style='font-size:1.3rem;font-weight:800;letter-spacing:1px;"
+                            "text-transform:uppercase;margin:0;color:#A100FF;'>"
+                            "SmartCV Assessor</p>"
+                            "<p style='color:#9CA3AF;font-size:0.85rem;margin:4px 0 10px 0;'>"
+                            "Ask why a match is low or how to improve your profile."
+                            "</p>"
+                            "</div>",
+                            unsafe_allow_html=True,
+                        )
+                    with hdr_r:
+                        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+                        if st.button("⛶ Full screen", use_container_width=True, key="btn_fullscreen"):
+                            st.session_state.chat_fullscreen = True
+                            st.rerun()
+
+                    for msg in st.session_state.advisor_history:
+                        with st.chat_message(msg["role"]):
+                            st.write(msg["content"])
+
+                    if user_input := st.chat_input("Ask the assessor…", key="advisor_input"):
+                        st.session_state.advisor_history.append({"role": "user", "content": user_input})
+                        with st.chat_message("user"):
+                            st.write(user_input)
+                        with st.chat_message("assistant"):
+                            with st.spinner("Thinking…"):
+                                try:
+                                    reply = advisor_respond(user_input, st.session_state.advisor_history[:-1], _system_prompt)
+                                except Exception as e:
+                                    reply = f"Could not connect to Ollama: {e}"
+                            st.write(reply)
+                        st.session_state.advisor_history.append({"role": "assistant", "content": reply})
+
+            with right_col:
+                render_ranking(entries)

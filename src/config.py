@@ -6,8 +6,8 @@ MODEL = "llama3"          # model Ollama per a tots els agents LLM
 
 # Lingüista
 LINGUIST_TOP_K           = 50    # vacants a analitzar (filtre ChromaDB previ)
-LINGUIST_MATCH_THRESHOLD = 0.85  # similitud cosinus mínima per a MATCH
-LINGUIST_GREY_THRESHOLD  = 0.60  # per sota (NO MATCH); entre els dos, (GREY ZONE)
+LINGUIST_MATCH_THRESHOLD = 0.87  # similitud cosinus mínima per a MATCH  (e5-base: rang comprimit 0.78-1.0)
+LINGUIST_GREY_THRESHOLD  = 0.855 # per sota (NO MATCH); entre els dos, (GREY ZONE)
 
 # Detectiu
 DETECTIVE_MAX_WORKERS    = 8     # crides Ollama en paral·lel (ajusta a la teva GPU)

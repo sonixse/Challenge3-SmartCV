@@ -9,8 +9,7 @@ _COLLECTION = _CHROMA_CLIENT.get_collection(name="vacancies")
 
 
 def _embed(text: str) -> np.ndarray:
-    """Embed a single string with BGE and return a normalized numpy vector."""
-    vec = _MODEL.encode(text, normalize_embeddings=True)
+    vec = _MODEL.encode(f"query: {text}", normalize_embeddings=True)
     return np.array(vec)
 
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
@@ -36,7 +35,7 @@ def retrieve_top_k(candidate: CandidateProfile, k: int = 50) -> list[str]:
         f"Education: {candidate.education_level} in {candidate.education_field}. "
         f"Skills: {skill_text}."
     )
-    query_vec = _MODEL.encode(query, normalize_embeddings=True).tolist()
+    query_vec = _MODEL.encode(f"query: {query}", normalize_embeddings=True).tolist()
     results = _COLLECTION.query(query_embeddings=[query_vec], n_results=k)
     return results["ids"][0]   # list of vacancy IDs (strings)
 

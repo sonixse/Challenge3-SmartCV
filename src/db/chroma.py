@@ -2,19 +2,20 @@ import chromadb
 from chromadb import EmbeddingFunction, Documents, Embeddings
 from sentence_transformers import SentenceTransformer
 
-BGE_MODEL_NAME = "BAAI/bge-small-en-v1.5"
+E5_MODEL_NAME = "intfloat/multilingual-e5-base"
 
-# BGE loaded once and shared by ef (indexing) and linguist (querying)
-model = SentenceTransformer(BGE_MODEL_NAME)
+# E5 loaded once and shared by ef (indexing) and linguist (querying)
+model = SentenceTransformer(E5_MODEL_NAME)
 
 
-class _BGEEmbeddingFunction(EmbeddingFunction):
+class _E5EmbeddingFunction(EmbeddingFunction):
     def name(self) -> str:
-        return "sentence_transformer"  # matches persisted collection config
+        return "sentence_transformer"
 
     def __call__(self, input: Documents) -> Embeddings:
-        return model.encode(list(input), normalize_embeddings=True).tolist()
+        passages = [f"passage: {doc}" for doc in input]
+        return model.encode(passages, normalize_embeddings=True).tolist()
 
 
 client = chromadb.PersistentClient(path="data/chroma")
-ef = _BGEEmbeddingFunction()
+ef = _E5EmbeddingFunction()
