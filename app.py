@@ -225,89 +225,66 @@ def render_pdf(pdf_path: Path, height: int = 520) -> None:
 # ─── UI render helpers ────────────────────────────────────────────────
 
 def render_profile(profile: CandidateProfile) -> None:
-    # ── Experience + Education (mateixa fila) ────────────────────────
+    # ── Experience + Education + Skills + Languages — compact ─────────
+    lang_parts = []
+    for lang in profile.languages:
+        color = _LEVEL_COLOR.get(lang.level.lower().replace(" ", ""), "#555")
+        lang_parts.append(
+            f"<span style='display:inline-flex;align-items:center;gap:10px;"
+            f"background:#1A1A1A;border-radius:12px;padding:8px 16px;"
+            f"margin:4px 8px 4px 0;border:1px solid rgba(255,255,255,0.08)'>"
+            f"<span style='font-weight:700;font-size:1.05rem;color:white'>{lang.language}</span>"
+            f"<span style='background:{color};color:white;border-radius:7px;"
+            f"padding:3px 10px;font-size:0.82rem;font-weight:700'>{lang.level}</span>"
+            f"</span>"
+        )
+
+    tags = "".join(
+        f"<span style='display:inline-block;background:rgba(161,0,255,0.12);color:#D8B4FE;"
+        f"border:1px solid rgba(161,0,255,0.28);border-radius:18px;padding:7px 18px;"
+        f"margin:4px 6px 4px 0;font-size:1.05rem;font-weight:600'>"
+        f"{s.name}{(' · ' + str(s.years) + 'y') if s.years is not None else ''}</span>"
+        for s in profile.skills
+    ) if profile.skills else f"<span style='color:#6B7280'>{t('profile.no_skills')}</span>"
+
     st.markdown(
-        "<div style='display:flex;gap:40px;align-items:flex-start;margin-top:24px;margin-bottom:28px'>"
+        f"<div style='margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:14px;'>"
 
         # Experience
-        "<div>"
-        f"<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
-        f"color:#A100FF;margin:0 0 14px 0'>{t('profile.experience')}</p>"
-        "<div style='display:inline-flex;align-items:center;gap:14px;"
-        "background:#1A1A1A;border-radius:18px;padding:16px 26px;"
-        "border:1px solid rgba(255,255,255,0.1)'>"
-        f"<span style='font-weight:900;font-size:2.8rem;color:white;line-height:1'>{profile.years_experience}</span>"
-        f"<span style='font-weight:700;font-size:1rem;color:#9CA3AF;letter-spacing:2px;text-transform:uppercase'>{t('profile.years')}</span>"
-        "</div></div>"
+        f"<div style='background:#1A1A1A;border-radius:14px;padding:18px 20px;"
+        f"border:1px solid rgba(255,255,255,0.08)'>"
+        f"<div style='font-size:0.78rem;font-weight:700;letter-spacing:1.5px;"
+        f"text-transform:uppercase;color:#A100FF;margin-bottom:8px'>{t('profile.experience')}</div>"
+        f"<div style='font-size:2.2rem;font-weight:900;color:white;line-height:1'>{profile.years_experience}"
+        f"<span style='font-size:1rem;color:#9CA3AF;margin-left:8px'>{t('profile.years')}</span></div>"
+        f"</div>"
 
         # Education
-        "<div>"
-        f"<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
-        f"color:#A100FF;margin:0 0 14px 0'>{t('profile.education')}</p>"
-        "<div style='display:inline-flex;align-items:center;gap:14px;"
-        "background:#1A1A1A;border-radius:18px;padding:16px 26px;"
-        "border:1px solid rgba(255,255,255,0.1)'>"
-        f"<span style='font-weight:800;font-size:1.35rem;color:white'>{profile.education_level}</span>"
-        f"<span style='background:rgba(161,0,255,0.22);color:#D8B4FE;border-radius:9px;"
-        f"padding:5px 14px;font-size:0.95rem;font-weight:800'>{profile.education_field}</span>"
-        "</div></div>"
+        f"<div style='background:#1A1A1A;border-radius:14px;padding:18px 20px;"
+        f"border:1px solid rgba(255,255,255,0.08)'>"
+        f"<div style='font-size:0.78rem;font-weight:700;letter-spacing:1.5px;"
+        f"text-transform:uppercase;color:#A100FF;margin-bottom:8px'>{t('profile.education')}</div>"
+        f"<div style='font-size:1.1rem;font-weight:800;color:white;line-height:1.35'>{profile.education_level}"
+        f"<br><span style='font-size:0.95rem;color:#9CA3AF;font-weight:500'>{profile.education_field}</span></div>"
+        f"</div>"
 
-        "</div>",
+        "</div>"
+
+        # Skills
+        f"<div style='margin-top:18px'>"
+        f"<div style='font-size:0.78rem;font-weight:700;letter-spacing:1.5px;"
+        f"text-transform:uppercase;color:#A100FF;margin-bottom:10px'>{t('profile.skills')}</div>"
+        f"<div style='line-height:2.6'>{tags}</div>"
+        f"</div>"
+
+        # Languages
+        f"<div style='margin-top:18px'>"
+        f"<div style='font-size:0.78rem;font-weight:700;letter-spacing:1.5px;"
+        f"text-transform:uppercase;color:#A100FF;margin-bottom:10px'>{t('profile.languages')}</div>"
+        f"<div>{''.join(lang_parts) if lang_parts else '<span style=color:#6B7280>' + t('profile.no_langs') + '</span>'}</div>"
+        f"</div>",
         unsafe_allow_html=True,
     )
-
-    # ── Skills ───────────────────────────────────────────────────────
-    st.markdown(
-        f"<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
-        f"color:#A100FF;margin:0 0 14px 0'>{t('profile.skills')}</p>",
-        unsafe_allow_html=True,
-    )
-    if profile.skills:
-        icons_html = "".join(
-            f"<span title='{s.name}' style='display:inline-flex;align-items:center;"
-            f"justify-content:center;width:56px;height:56px;margin:4px;"
-            f"background:#1A1530;border-radius:14px;border:1px solid rgba(161,0,255,0.2)'>"
-            f"{skill_icon_html(s.name, size=32)}</span>"
-            for s in profile.skills
-            if skill_icon_html(s.name, size=32)
-        )
-        if icons_html:
-            st.markdown(f"<div style='margin-bottom:18px'>{icons_html}</div>", unsafe_allow_html=True)
-
-        tags = "".join(
-            f"<span style='display:inline-block;background:rgba(161,0,255,0.14);color:#D8B4FE;"
-            f"border:1px solid rgba(161,0,255,0.35);border-radius:24px;padding:7px 24px;"
-            f"margin:5px 8px 5px 0;font-size:1.4rem;font-weight:700'>"
-            f"{s.name}{(' &nbsp;·&nbsp; ' + str(s.years) + 'y') if s.years is not None else ''}</span>"
-            for s in profile.skills
-        )
-        st.markdown(f"<div style='line-height:3.2'>{tags}</div>", unsafe_allow_html=True)
-    else:
-        st.caption(t("profile.no_skills"))
-
-    # ── Languages ────────────────────────────────────────────────────
-    st.markdown("<div style='height:36px'></div>", unsafe_allow_html=True)
-    st.markdown(
-        f"<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
-        f"color:#A100FF;margin:0 0 14px 0'>{t('profile.languages')}</p>",
-        unsafe_allow_html=True,
-    )
-    if profile.languages:
-        lang_parts = []
-        for lang in profile.languages:
-            color = _LEVEL_COLOR.get(lang.level.lower().replace(" ", ""), "#555")
-            lang_parts.append(
-                f"<div style='display:inline-flex;align-items:center;gap:14px;"
-                f"background:#1A1A1A;border-radius:18px;padding:16px 26px;"
-                f"margin:5px 10px 5px 0;border:1px solid rgba(255,255,255,0.1)'>"
-                f"<span style='font-weight:800;font-size:1.35rem;color:white'>{lang.language}</span>"
-                f"<span style='background:{color};color:white;border-radius:9px;"
-                f"padding:5px 14px;font-size:0.95rem;font-weight:800'>{lang.level}</span>"
-                f"</div>"
-            )
-        st.markdown(f"<div>{''.join(lang_parts)}</div>", unsafe_allow_html=True)
-    else:
-        st.caption(t("profile.no_langs"))
 
 
 def render_ranking(top: list[PodiumEntry]) -> list[PodiumEntry]:
@@ -390,8 +367,8 @@ def render_ranking(top: list[PodiumEntry]) -> list[PodiumEntry]:
                 bd = f"border:1px solid {border};" if border else ""
                 return (
                     f"<span style='display:inline-block;background:{bg};color:{fg};{bd}"
-                    f"border-radius:8px;padding:3px 10px;margin:3px 5px 3px 0;"
-                    f"font-size:0.78rem;font-weight:600'>{text}</span>"
+                    f"border-radius:10px;padding:6px 14px;margin:4px 6px 4px 0;"
+                    f"font-size:0.95rem;font-weight:600'>{text}</span>"
                 )
 
             must_skills  = [s for s in vac.skills if s.type == "must_have"   and s.name.lower() != "languages"]
@@ -414,9 +391,9 @@ def render_ranking(top: list[PodiumEntry]) -> list[PodiumEntry]:
 
             def _block(label_key: str, color: str, chips_html: str) -> str:
                 return (
-                    f"<div style='margin-top:10px'>"
-                    f"<div style='font-size:0.7rem;font-weight:800;letter-spacing:1.5px;"
-                    f"text-transform:uppercase;color:{color};margin-bottom:4px'>{t(label_key)}</div>"
+                    f"<div style='margin-top:14px'>"
+                    f"<div style='font-size:0.82rem;font-weight:800;letter-spacing:1.5px;"
+                    f"text-transform:uppercase;color:{color};margin-bottom:6px'>{t(label_key)}</div>"
                     f"<div>{chips_html}</div></div>"
                 )
 
@@ -442,9 +419,9 @@ def render_ranking(top: list[PodiumEntry]) -> list[PodiumEntry]:
             details_html = (
                 "<details style='margin-top:14px;border-top:1px dashed rgba(255,255,255,0.1);padding-top:10px'>"
                 "<summary style='cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;"
-                "font-size:0.78rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;"
+                "font-size:0.95rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;"
                 "color:#A100FF;outline:none'>"
-                f"<span style='font-size:0.9rem'>▸</span> {t('offer.details')}"
+                f"<span style='font-size:1rem'>▸</span> {t('offer.details')}"
                 "</summary>"
                 f"<div style='margin-top:8px'>{''.join(sections)}</div>"
                 "</details>"
@@ -460,38 +437,38 @@ def render_ranking(top: list[PodiumEntry]) -> list[PodiumEntry]:
 
         cards_html += (
             f"<div style='{_medal_border}border-radius:22px;"
-            f"padding:16px 20px;margin-bottom:10px;background:#141414;"
+            f"padding:22px 26px;margin-bottom:14px;background:#141414;"
             f"animation:cardIn .4s ease {delay:.2f}s both;'>"
 
             # top row
-            f"<div style='display:flex;align-items:center;gap:20px;'>"
+            f"<div style='display:flex;align-items:center;gap:22px;'>"
 
             # score bubble
             f"<div style='text-align:center;background:{score_bg};color:white;"
-            f"border-radius:13px;padding:12px 14px;min-width:72px;flex-shrink:0;"
-            f"box-shadow:0 4px 18px rgba(0,0,0,0.4);'>"
-            f"<div style='font-size:2rem;font-weight:900;line-height:1'>{score}</div>"
-            f"<div style='font-size:0.62rem;opacity:0.9;font-weight:800;letter-spacing:2px;margin-top:2px'>% MATCH</div>"
+            f"border-radius:16px;padding:16px 20px;min-width:90px;flex-shrink:0;"
+            f"box-shadow:0 6px 24px rgba(0,0,0,0.4);'>"
+            f"<div style='font-size:2.6rem;font-weight:900;line-height:1'>{score}</div>"
+            f"<div style='font-size:0.72rem;opacity:0.9;font-weight:800;letter-spacing:2px;margin-top:3px'>% MATCH</div>"
             f"</div>"
 
             # title block
             f"<div style='flex:1;min-width:0;'>"
-            f"<div style='font-size:0.75rem;color:#6B7280;font-weight:600;letter-spacing:.5px;margin-bottom:3px'>"
+            f"<div style='font-size:0.85rem;color:#6B7280;font-weight:600;letter-spacing:.5px;margin-bottom:4px'>"
             f"{rank_label}"
             f"</div>"
-            f"<div style='font-size:1.15rem;font-weight:900;color:white;line-height:1.2;"
+            f"<div style='font-size:1.45rem;font-weight:900;color:white;line-height:1.2;"
             f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
             f"{entry.role}"
             f"</div>"
-            f"<div style='font-size:0.85rem;color:#A100FF;font-weight:700;margin-top:3px'>"
+            f"<div style='font-size:1rem;color:#A100FF;font-weight:700;margin-top:5px'>"
             f"{entry.sector}"
             f"</div>"
             f"</div>"
             # meta pill on the right
             + (f"<div style='flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px;'>"
             f"<div style='background:#1F1F1F;border:1px solid rgba(255,255,255,0.1);"
-            f"border-radius:12px;padding:8px 16px;text-align:center;'>"
-            f"<div style='font-size:0.85rem;font-weight:700;color:white;white-space:nowrap;'>{meta}</div>"
+            f"border-radius:12px;padding:10px 18px;text-align:center;'>"
+            f"<div style='font-size:1rem;font-weight:700;color:white;white-space:nowrap;'>{meta}</div>"
             f"</div>"
             f"</div>" if meta else "<div></div>")
             + f"</div>"
@@ -587,14 +564,14 @@ section[data-testid="stMain"],
 [data-testid="stTabs"] [data-baseweb="tab"] {
     border-radius: 9px !important;
     font-weight: 700 !important;
-    font-size: 1.5rem !important;
+    font-size: 1rem !important;
     color: #9CA3AF !important;
-    padding: 14px 30px !important;
+    padding: 9px 20px !important;
 }
 [data-testid="stTabs"] [data-baseweb="tab"] p,
 [data-testid="stTabs"] [data-baseweb="tab"] span,
 [data-testid="stTabs"] [data-baseweb="tab"] div {
-    font-size: 1.5rem !important;
+    font-size: 1rem !important;
 }
 [data-testid="stTabs"] [aria-selected="true"] {
     background: #2A2A2A !important;
@@ -869,6 +846,27 @@ if selection is None:
 else:
     # ── DETAIL VIEW ───────────────────────────────────────────────────
 
+    # Same hero header as landing
+    st.markdown(
+        "<div style='text-align:center;padding:0 0 20px 0;'>"
+        "<div style='display:inline-flex;align-items:center;gap:24px;margin-bottom:14px;'>"
+        "<h1 style='font-size:5rem;font-weight:900;letter-spacing:-3px;line-height:1;margin:0;"
+        "background:linear-gradient(90deg,#ffffff 0%,#A100FF 100%);"
+        "-webkit-background-clip:text;-webkit-text-fill-color:transparent;"
+        "background-clip:text;'>SmartCV</h1>"
+        f"<p style='color:rgba(255,255,255,0.55);font-size:1.8rem;font-weight:600;"
+        f"letter-spacing:10px;text-transform:uppercase;margin:0;line-height:1;'>"
+        f"{t('hero.tagline')}</p>"
+        "</div>"
+        "<br>"
+        f"<h2 style='font-size:3.2rem;font-weight:900;"
+        f"letter-spacing:-1px;line-height:1.15;margin:0;color:white;'>"
+        f"{t('hero.headline')}"
+        "</h2>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
     kind, key = selection
     if kind == "example":
         pdf_path = examples.get(key)
@@ -913,16 +911,9 @@ else:
         top_l, top_r = st.columns([5, 1])
         with top_l:
             if profile:
-                meta_parts = []
-                if profile.location:
-                    meta_parts.append(f"📍 {profile.location}")
-                if profile.contact:
-                    meta_parts.append(f"✉️ {profile.contact}")
-                meta_str = " &nbsp;·&nbsp; ".join(meta_parts)
                 st.markdown(
-                    f"<h2 style='margin:0 0 2px 0;font-size:1.55rem;font-weight:800;"
-                    f"color:white;line-height:1.1'>{profile.name}</h2>"
-                    f"<p style='margin:0;color:#6B7280;font-size:0.82rem'>{meta_str}</p>",
+                    f"<h2 style='margin:0;font-size:1.55rem;font-weight:800;"
+                    f"color:white;line-height:1.1'>{profile.name}</h2>",
                     unsafe_allow_html=True,
                 )
             else:
@@ -1000,11 +991,11 @@ else:
                     hdr_l, hdr_r = st.columns([3, 1])
                     with hdr_l:
                         st.markdown(
-                            f"<div style='margin-top:24px;margin-bottom:8px;'>"
-                            f"<p style='font-size:1.3rem;font-weight:800;letter-spacing:1px;"
-                            f"text-transform:uppercase;margin:0;color:#A100FF;'>"
+                            f"<div style='margin-top:28px;margin-bottom:10px;'>"
+                            f"<p style='font-size:1.6rem;font-weight:800;letter-spacing:1px;"
+                            f"text-transform:uppercase;margin:0 0 6px 0;color:#A100FF;'>"
                             f"{t('assessor.title')}</p>"
-                            f"<p style='color:#9CA3AF;font-size:0.85rem;margin:4px 0 10px 0;'>"
+                            f"<p style='color:#9CA3AF;font-size:1rem;margin:0 0 12px 0;line-height:1.5;'>"
                             f"{t('assessor.desc')}</p>"
                             "</div>",
                             unsafe_allow_html=True,
