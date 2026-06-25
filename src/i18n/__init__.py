@@ -4,7 +4,7 @@ from __future__ import annotations
 import streamlit as st
 from .translations import TRANSLATIONS
 
-SUPPORTED = ["en", "es", "ca"]
+SUPPORTED = ["en", "es", "ca", "ru", "it", "fr", "de"]
 DEFAULT   = "en"
 
 
@@ -50,21 +50,32 @@ def t(key: str, **kwargs) -> str:
     return text
 
 
+_LANG_LABELS = {
+    "en": "EN · English",
+    "es": "ES · Español",
+    "ca": "CA · Català",
+    "ru": "RU · Русский",
+    "it": "IT · Italiano",
+    "fr": "FR · Français",
+    "de": "DE · Deutsch",
+}
+
+
 def render_lang_switcher() -> None:
-    """Compact three-button language switcher: EN / ES / CA."""
+    """Language dropdown selector."""
     current = get_lang()
-    c1, c2, c3 = st.columns(3)
-    for col, code in zip([c1, c2, c3], SUPPORTED):
-        label = code.upper()
-        with col:
-            if current == code:
-                st.markdown(
-                    f"<div style='text-align:center;padding:5px 0;"
-                    f"background:#A100FF;border-radius:8px;font-size:0.82rem;"
-                    f"font-weight:800;color:white;letter-spacing:1px;'>{label}</div>",
-                    unsafe_allow_html=True,
-                )
-            else:
-                if st.button(label, key=f"_lang_{code}", use_container_width=True):
-                    set_lang(code)
-                    st.rerun()
+    options = SUPPORTED
+    labels  = [_LANG_LABELS.get(c, c.upper()) for c in options]
+    idx     = options.index(current) if current in options else 0
+
+    chosen = st.selectbox(
+        "🌐",
+        options=labels,
+        index=idx,
+        label_visibility="collapsed",
+        key="_lang_select",
+    )
+    chosen_code = options[labels.index(chosen)]
+    if chosen_code != current:
+        set_lang(chosen_code)
+        st.rerun()
