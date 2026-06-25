@@ -19,6 +19,7 @@ from src.config import MODEL
 from src.data.load_vacancies import load as load_vacancies
 from src.schemas.candidate import CandidateProfile
 from src.schemas.vacancy import Vacancy
+from src.i18n import init_lang, t, render_lang_switcher
 
 # ─── Constants ────────────────────────────────────────────────────────
 
@@ -113,10 +114,10 @@ def _epic_loader_html() -> str:
         "<h1 style='font-size:2.4rem;font-weight:900;margin:0;line-height:1;"
         "background:linear-gradient(90deg,#fff 0%,#A100FF 100%);"
         "-webkit-background-clip:text;-webkit-text-fill-color:transparent;"
-        "background-clip:text;animation:titleGlow 2.5s ease-in-out infinite;'>7 Agents Working</h1>"
+        f"background-clip:text;animation:titleGlow 2.5s ease-in-out infinite;'>{t('loader.agents')}</h1>"
         "</div>"
-        "<p style='color:#4B5563;font-size:1.25rem;margin:0 0 52px 0;'>"
-        "Analysing your CV against 1,000 job offers</p>"
+        f"<p style='color:#4B5563;font-size:1.25rem;margin:0 0 52px 0;'>"
+        f"{t('loader.subtitle')}</p>"
         # ── Orbiting geometry ─────────────────────────────────────────
         "<div style='position:relative;width:160px;height:160px;margin:0 auto 52px auto;'>"
         "<div style='position:absolute;inset:0;border-radius:50%;border:2px dashed rgba(161,0,255,0.4);animation:spinRing 4s linear infinite;'></div>"
@@ -128,10 +129,10 @@ def _epic_loader_html() -> str:
         "</div>"
         # ── Cycling messages ──────────────────────────────────────────
         "<div style='position:relative;height:24px;width:480px;margin:0 auto;'>"
-        "<div style='position:absolute;width:100%;text-align:center;font-size:1rem;font-weight:700;letter-spacing:2px;color:#6B7280;animation:msgCycle 24s linear infinite 0s;'>READING YOUR CV &middot; PLEASE WAIT</div>"
-        "<div style='position:absolute;width:100%;text-align:center;font-size:1rem;font-weight:700;letter-spacing:2px;color:#6B7280;animation:msgCycle 24s linear infinite -18s;'>MATCHING YOUR SKILLS &middot; HANG TIGHT</div>"
-        "<div style='position:absolute;width:100%;text-align:center;font-size:1rem;font-weight:700;letter-spacing:2px;color:#6B7280;animation:msgCycle 24s linear infinite -12s;'>RESOLVING GREY ZONES &middot; ALMOST THERE</div>"
-        "<div style='position:absolute;width:100%;text-align:center;font-size:1rem;font-weight:700;letter-spacing:2px;color:#6B7280;animation:msgCycle 24s linear infinite -6s;'>RANKING YOUR MATCHES &middot; FINAL STEP</div>"
+        f"<div style='position:absolute;width:100%;text-align:center;font-size:1rem;font-weight:700;letter-spacing:2px;color:#6B7280;animation:msgCycle 24s linear infinite 0s;'>{t('ticker.msg1')}</div>"
+        f"<div style='position:absolute;width:100%;text-align:center;font-size:1rem;font-weight:700;letter-spacing:2px;color:#6B7280;animation:msgCycle 24s linear infinite -18s;'>{t('ticker.msg2')}</div>"
+        f"<div style='position:absolute;width:100%;text-align:center;font-size:1rem;font-weight:700;letter-spacing:2px;color:#6B7280;animation:msgCycle 24s linear infinite -12s;'>{t('ticker.msg3')}</div>"
+        f"<div style='position:absolute;width:100%;text-align:center;font-size:1rem;font-weight:700;letter-spacing:2px;color:#6B7280;animation:msgCycle 24s linear infinite -6s;'>{t('ticker.msg4')}</div>"
         "</div>"
         "</div>"
         "</div>"
@@ -230,19 +231,19 @@ def render_profile(profile: CandidateProfile) -> None:
 
         # Experience
         "<div>"
-        "<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
-        "color:#A100FF;margin:0 0 14px 0'>Experience</p>"
+        f"<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
+        f"color:#A100FF;margin:0 0 14px 0'>{t('profile.experience')}</p>"
         "<div style='display:inline-flex;align-items:center;gap:14px;"
         "background:#1A1A1A;border-radius:18px;padding:16px 26px;"
         "border:1px solid rgba(255,255,255,0.1)'>"
         f"<span style='font-weight:900;font-size:2.8rem;color:white;line-height:1'>{profile.years_experience}</span>"
-        "<span style='font-weight:700;font-size:1rem;color:#9CA3AF;letter-spacing:2px;text-transform:uppercase'>years</span>"
+        f"<span style='font-weight:700;font-size:1rem;color:#9CA3AF;letter-spacing:2px;text-transform:uppercase'>{t('profile.years')}</span>"
         "</div></div>"
 
         # Education
         "<div>"
-        "<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
-        "color:#A100FF;margin:0 0 14px 0'>Education</p>"
+        f"<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
+        f"color:#A100FF;margin:0 0 14px 0'>{t('profile.education')}</p>"
         "<div style='display:inline-flex;align-items:center;gap:14px;"
         "background:#1A1A1A;border-radius:18px;padding:16px 26px;"
         "border:1px solid rgba(255,255,255,0.1)'>"
@@ -257,8 +258,8 @@ def render_profile(profile: CandidateProfile) -> None:
 
     # ── Skills ───────────────────────────────────────────────────────
     st.markdown(
-        "<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
-        "color:#A100FF;margin:0 0 14px 0'>Skills</p>",
+        f"<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
+        f"color:#A100FF;margin:0 0 14px 0'>{t('profile.skills')}</p>",
         unsafe_allow_html=True,
     )
     if profile.skills:
@@ -282,14 +283,13 @@ def render_profile(profile: CandidateProfile) -> None:
         )
         st.markdown(f"<div style='line-height:3.2'>{tags}</div>", unsafe_allow_html=True)
     else:
-        st.caption("No skills detected")
+        st.caption(t("profile.no_skills"))
 
     # ── Languages ────────────────────────────────────────────────────
     st.markdown("<div style='height:36px'></div>", unsafe_allow_html=True)
     st.markdown(
-        "<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
-        "color:#A100FF;margin:0 0 14px 0'>"
-        " Languages</p>",
+        f"<p style='font-size:1.8rem;font-weight:800;letter-spacing:2px;"
+        f"color:#A100FF;margin:0 0 14px 0'>{t('profile.languages')}</p>",
         unsafe_allow_html=True,
     )
     if profile.languages:
@@ -307,7 +307,7 @@ def render_profile(profile: CandidateProfile) -> None:
             )
         st.markdown(f"<div>{''.join(lang_parts)}</div>", unsafe_allow_html=True)
     else:
-        st.caption("No languages detected")
+        st.caption(t("profile.no_langs"))
 
 
 def render_ranking(top: list[PodiumEntry]) -> list[PodiumEntry]:
@@ -318,18 +318,15 @@ def render_ranking(top: list[PodiumEntry]) -> list[PodiumEntry]:
         "<div style='font-size:2.2rem;font-weight:900;color:white;line-height:1;margin-bottom:6px;"
         "background:linear-gradient(90deg,#ffffff,#A100FF);"
         "-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'>"
-        "🏆 Best Job Matches</div>"
+        f"{t('ranking.title')}</div>"
         f"<div style='font-size:0.9rem;color:#6B7280;font-weight:500;letter-spacing:.5px'>"
-        f"Top {len(top)} of {total_offers} offers · sorted by AI match score</div>"
+        f"{t('ranking.caption', n=len(top), total=total_offers)}</div>"
         "</div>",
         unsafe_allow_html=True,
     )
 
     if not top:
-        st.warning(
-            f"No matches found among {total_offers} offers — "
-            "candidate is eliminated by language or experience requirements."
-        )
+        st.warning(t("ranking.no_matches", total=total_offers))
         return []
 
     medal = {1: "🥇", 2: "🥈", 3: "🥉"}
@@ -373,9 +370,9 @@ def render_ranking(top: list[PodiumEntry]) -> list[PodiumEntry]:
         meta = f"{exp_req} · {deg_req}" if exp_req else ""
 
         signals = " ".join([
-            _signal(entry.reasons.language,   "Language"),
-            _signal(entry.reasons.experience, "Experience"),
-            _signal(entry.reasons.education,  "Education"),
+            _signal(entry.reasons.language,   t("ranking.sig_lang")),
+            _signal(entry.reasons.experience, t("ranking.sig_exp")),
+            _signal(entry.reasons.education,  t("ranking.sig_edu")),
         ])
 
         flags_html = ""
@@ -584,6 +581,7 @@ for _k, _v in [("selected", None), ("dropdown_v", 0), ("detective_knowledge", {}
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
+init_lang()
 examples = list_example_pdfs()
 
 # ─── Main content ─────────────────────────────────────────────────────
@@ -591,6 +589,11 @@ examples = list_example_pdfs()
 selection = st.session_state.selected
 
 if selection is None:
+    # ── Language switcher (top-right) ────────────────────────────────
+    _, _lc = st.columns([6, 1])
+    with _lc:
+        render_lang_switcher()
+
     # ── Full-width hero: centered ─────────────────────────────────────
     st.markdown(
         "<div style='text-align:center;padding:0 0 28px 0;'>"
@@ -601,12 +604,12 @@ if selection is None:
         "background-clip:text;'>SmartCV</h1>"
         "<p style='color:rgba(255,255,255,0.55);font-size:1.8rem;font-weight:600;"
         "letter-spacing:10px;text-transform:uppercase;margin:0;line-height:1;'>"
-        "AI &nbsp;&nbsp;&nbsp; Job &nbsp;&nbsp;&nbsp; Matching</p>"
+        f"{t('hero.tagline')}</p>"
         "</div>"
         "<br>"
-        "<h2 style='font-size:3.2rem;font-weight:900;"
-        "letter-spacing:-1px;line-height:1.15;margin:0;color:white;'>"
-        "Find the jobs where you truly fit."
+        f"<h2 style='font-size:3.2rem;font-weight:900;"
+        f"letter-spacing:-1px;line-height:1.15;margin:0;color:white;'>"
+        f"{t('hero.headline')}"
         "</h2>"
         "</div>",
         unsafe_allow_html=True,
@@ -614,23 +617,20 @@ if selection is None:
 
     # ── Linear ticker with separator ─────────────────────────────────
     _TICKER_DATA = [
-        ("📄", "#FF8C42", "Ada Lovelace",       "Reads your CV"),
-        ("⚖️", "#60A5FA", "Marie Curie",         "Filters hard rules"),
-        ("🧠", "#34D399", "Alan Turing",         "Matches your skills"),
-        ("🔍", "#FBBF24", "Hedy Lamarr",         "Resolves grey zones"),
-        ("🥇", "#F87171", "Serena Williams",     "Scores & ranks"),
-        ("💡", "#C084FC", "Steve Jobs",          "Coaches you"),
-        ("🏆", "#FCD34D", "Johannes Gutenberg",  "Publishes results"),
+        ("📄", "#FF8C42", "Ada Lovelace",       t("ticker.ada")),
+        ("⚖️", "#60A5FA", "Marie Curie",         t("ticker.marie")),
+        ("🧠", "#34D399", "Alan Turing",         t("ticker.alan")),
+        ("🔍", "#FBBF24", "Hedy Lamarr",         t("ticker.hedy")),
+        ("🥇", "#F87171", "Serena Williams",     t("ticker.serena")),
+        ("💡", "#C084FC", "Steve Jobs",          t("ticker.steve")),
+        ("🏆", "#FCD34D", "Johannes Gutenberg",  t("ticker.johannes")),
     ]
 
     _separator = (
         "<div style='display:inline-flex;align-items:center;gap:14px;"
         "padding:0 40px;flex-shrink:0;'>"
-        "<span style='font-size:1.3rem;font-weight:800;letter-spacing:3px;"
-        "text-transform:uppercase;color:white;white-space:nowrap;'>7 AI agents</span>"
-        "<span style='color:#A100FF;font-size:1.6rem;'>&middot;</span>"
-        "<span style='font-size:1.3rem;font-weight:800;letter-spacing:3px;"
-        "text-transform:uppercase;color:white;white-space:nowrap;'>one pipeline</span>"
+        f"<span style='font-size:1.3rem;font-weight:800;letter-spacing:3px;"
+        f"text-transform:uppercase;color:white;white-space:nowrap;'>{t('ticker.label')}</span>"
         "</div>"
         "<span style='color:rgba(161,0,255,0.35);font-size:2rem;padding:0 10px;flex-shrink:0;'>|</span>"
     )
@@ -685,35 +685,23 @@ if selection is None:
             # ── Headline
             "<h2 style='color:white;font-size:3rem;font-weight:900;"
             "letter-spacing:-1px;line-height:1.1;margin:0 0 10px 0;'>"
-            "Your CV, decoded in seconds."
+            f"{t('landing.decoded')}"
             "</h2>"
-            # ── Subtext
-            "<p style='color:rgba(255,255,255,0.65);font-size:1.25rem;font-weight:400;"
-            "line-height:1.6;margin:0 0 20px 0;'>"
-            "We read your CV, match your skills semantically against real job offers, "
-            "and return a <span style='color:white;font-weight:600;'>ranked list</span> "
-            "with the <span style='color:white;font-weight:600;'>exact reasons</span> "
-            "behind every score. No black boxes."
-            "</p>"
-            # ── Extracted info label
-            "<p style='font-size:1.3rem;font-weight:700;letter-spacing:1.5px;"
-            "text-transform:uppercase;color:#A100FF;margin:0 0 10px 0;'>What we extract</p>"
-            # ── Bullet list
-            "<div style='color:#9CA3AF;font-size:1.5rem;line-height:2.1;font-weight:500;"
-            "margin:0 0 22px 0;'>"
-            "✦ &nbsp;Skills &amp; years of experience<br>"
-            "✦ &nbsp;Education level &amp; field<br>"
-            "✦ &nbsp;Languages &amp; proficiency"
+            f"<p style='color:rgba(255,255,255,0.65);font-size:1.25rem;font-weight:400;"
+            f"line-height:1.6;margin:0 0 20px 0;'>{t('landing.desc')}</p>"
+            f"<p style='font-size:1.3rem;font-weight:700;letter-spacing:1.5px;"
+            f"text-transform:uppercase;color:#A100FF;margin:0 0 10px 0;'>{t('landing.extract_label')}</p>"
+            f"<div style='color:#9CA3AF;font-size:1.5rem;line-height:2.1;font-weight:500;margin:0 0 22px 0;'>"
+            f"✦ &nbsp;{t('landing.extract.skills')}<br>"
+            f"✦ &nbsp;{t('landing.extract.edu')}<br>"
+            f"✦ &nbsp;{t('landing.extract.langs')}"
             "</div>"
-            # ── Assessor callout
             "<div style='background:rgba(161,0,255,0.08);border:1px solid rgba(161,0,255,0.25);"
             "border-left:3px solid #A100FF;border-radius:12px;padding:14px 18px;'>"
-            "<p style='font-size:1.3rem;font-weight:800;letter-spacing:1px;"
-            "text-transform:uppercase;margin:0 0 8px 0;color:#A100FF;'>SmartCV Assessor</p>"
-            "<p style='color:rgba(255,255,255,0.8);font-size:1.2rem;line-height:1.6;margin:0;'>"
-            "Not sure why a match failed or how to improve? "
-            "<strong style='color:white;'>Ask our AI assessor</strong>: "
-            "it explains every decision and gives you concrete advice."
+            f"<p style='font-size:1.3rem;font-weight:800;letter-spacing:1px;"
+            f"text-transform:uppercase;margin:0 0 8px 0;color:#A100FF;'>{t('assessor.title')}</p>"
+            f"<p style='color:rgba(255,255,255,0.8);font-size:1.2rem;line-height:1.6;margin:0;'>"
+            f"{t('landing.assessor_desc')}"
             "</p>"
             "</div>",
             unsafe_allow_html=True,
@@ -722,11 +710,10 @@ if selection is None:
     with cards_col:
         with st.container(border=True):
             st.markdown(
-                "<h3 style='font-size:2.4rem;font-weight:900;color:white;margin:8px 0 12px 0;'>"
-                "Upload your CV</h3>"
-                "<p style='color:#9CA3AF;font-size:1.25rem;margin:0 0 18px 0;line-height:1.6;'>"
-                "Use a PDF. Once loaded, press Analyse — your profile and ranking will open."
-                "</p>",
+                f"<h3 style='font-size:2.4rem;font-weight:900;color:white;margin:8px 0 12px 0;'>"
+                f"{t('upload.title')}</h3>"
+                f"<p style='color:#9CA3AF;font-size:1.25rem;margin:0 0 18px 0;line-height:1.6;'>"
+                f"{t('upload.desc')}</p>",
                 unsafe_allow_html=True,
             )
             uploaded = st.file_uploader(
@@ -740,8 +727,8 @@ if selection is None:
                 target_pdf = UPLOADS_DIR / uploaded.name
                 if not target_pdf.exists():
                     target_pdf.write_bytes(uploaded.getbuffer())
-                st.success(f"✅ {uploaded.name} — ready!")
-                if st.button("🚀  Show ranking", use_container_width=True, key="btn_process_upload"):
+                st.success(f"✅ {uploaded.name} — {t('upload.ready')}")
+                if st.button(t("upload.btn"), use_container_width=True, key="btn_process_upload"):
                     st.session_state.selected = ("upload", stem)
                     st.session_state.ranking_requested = True
                     st.rerun()
@@ -750,14 +737,13 @@ if selection is None:
 
         with st.container(border=True):
             st.markdown(
-                "<h3 style='font-size:2.4rem;font-weight:900;color:white;margin:8px 0 12px 0;'>"
-                "Try a sample profile</h3>"
-                "<p style='color:#9CA3AF;font-size:1.25rem;margin:0 0 18px 0;line-height:1.6;'>"
-                "No CV handy? Pick one of our pre-loaded profiles and see the full analysis live — no upload needed."
-                "</p>"
-                "<p style='font-size:1rem;font-weight:700;letter-spacing:1px;"
-                "text-transform:uppercase;color:#A100FF;margin:0 0 10px 0;'>"
-                "Available profiles</p>",
+                f"<h3 style='font-size:2.4rem;font-weight:900;color:white;margin:8px 0 12px 0;'>"
+                f"{t('sample.title')}</h3>"
+                f"<p style='color:#9CA3AF;font-size:1.25rem;margin:0 0 18px 0;line-height:1.6;'>"
+                f"{t('sample.desc')}</p>"
+                f"<p style='font-size:1rem;font-weight:700;letter-spacing:1px;"
+                f"text-transform:uppercase;color:#A100FF;margin:0 0 10px 0;'>"
+                f"{t('sample.profiles')}</p>",
                 unsafe_allow_html=True,
             )
             if examples:
@@ -776,21 +762,21 @@ if selection is None:
                     key=f"cv_dropdown_{st.session_state.dropdown_v}",
                 )
                 if chosen_label:
-                    if st.button("🚀  Show ranking", use_container_width=True, key="btn_show_example"):
+                    if st.button(t("upload.btn"), use_container_width=True, key="btn_show_example"):
                         st.session_state.selected = ("example", label_to_nn[chosen_label])
                         st.session_state.ranking_requested = True
                         st.rerun()
             else:
-                st.info("No sample CVs found in data/raw/")
+                st.info(t("upload.no_cvs"))
 
     # ── Stats grid (below uploads) ────────────────────────────────────
     _STATS = [
-        ("1,000",  "Vacancies indexed",  ""),
-        ("7",      "Specialized agents", "Ada &middot; Marie &middot; Alan &middot; Hedy<br>Serena &middot; Steve &middot; Johannes"),
-        ("0",      "Keywords used",      "Pure semantic AI. <br>We match meaning, not words"),
-        ("100%",   "Runs locally",       ""),
-        ("4",      "Evaluation axes",    "Semantic skills &middot; Experience<br>Education &middot; Language"),
-        ("<30s",   "Average analysis",   ""),
+        ("1,000", t("stat.vacancies"), ""),
+        ("7",     t("stat.agents"),    "Ada &middot; Marie &middot; Alan &middot; Hedy<br>Serena &middot; Steve &middot; Johannes"),
+        ("0",     t("stat.keywords"),  t("stat.keywords_sub")),
+        ("100%",  t("stat.local"),     ""),
+        ("4",    t("stat.axes"),  t("stat.axes_sub")),
+        ("<30s", t("stat.speed"), ""),
     ]
     _stat_cells = "".join(
         f"<div style='background:#0D0D0D;padding:36px 20px;text-align:center;'>"
@@ -846,13 +832,16 @@ else:
             except Exception as e:
                 msg = str(e).lower()
                 if any(tok in msg for tok in ("connect", "refus", "ollama", "11434")):
-                    st.error("Cannot connect to Ollama. Make sure `ollama serve` is running.")
+                    st.error(t("err.ollama"))
                 else:
-                    st.error(f"Error processing CV: {e}")
+                    st.error(t("err.cv", err=e))
             finally:
                 _loader.empty()
 
-        # Top bar: name + back button
+        # Top bar: name + lang switcher + back button
+        _, _lc2 = st.columns([6, 1])
+        with _lc2:
+            render_lang_switcher()
         top_l, top_r = st.columns([5, 1])
         with top_l:
             if profile:
@@ -875,7 +864,7 @@ else:
                     unsafe_allow_html=True,
                 )
         with top_r:
-            if st.button("Change CV", use_container_width=True):
+            if st.button(t("detail.change_cv"), use_container_width=True):
                 st.session_state.selected = None
                 st.session_state.ranking_requested = False
                 st.session_state.advisor_history = []
@@ -896,14 +885,14 @@ else:
         if st.session_state.get("chat_fullscreen") and _assessor_available:
             back_col, title_col = st.columns([1, 5])
             with back_col:
-                if st.button("← Back to results", use_container_width=True):
+                if st.button(t("assessor.back"), use_container_width=True):
                     st.session_state.chat_fullscreen = False
                     st.rerun()
             with title_col:
                 st.markdown(
-                    "<p style='font-size:1.5rem;font-weight:800;letter-spacing:1px;"
-                    "text-transform:uppercase;color:#A100FF;margin:6px 0 0 0;'>"
-                    "SmartCV Assessor — Full Screen</p>",
+                    f"<p style='font-size:1.5rem;font-weight:800;letter-spacing:1px;"
+                    f"text-transform:uppercase;color:#A100FF;margin:6px 0 0 0;'>"
+                    f"{t('assessor.fullscreen')}</p>",
                     unsafe_allow_html=True,
                 )
 
@@ -911,7 +900,7 @@ else:
                 with st.chat_message(msg["role"]):
                     st.write(msg["content"])
 
-            if user_input := st.chat_input("Ask anything about your CV or matches…", key="advisor_fs_input"):
+            if user_input := st.chat_input(t("assessor.fs_placeholder"), key="advisor_fs_input"):
                 st.session_state.advisor_history.append({"role": "user", "content": user_input})
                 with st.chat_message("user"):
                     st.write(user_input)
@@ -920,7 +909,7 @@ else:
                         try:
                             reply = advisor_respond(user_input, st.session_state.advisor_history[:-1], _system_prompt)
                         except Exception as e:
-                            reply = f"Could not connect to Ollama: {e}"
+                            reply = t("assessor.error", err=e)
                     st.write(reply)
                 st.session_state.advisor_history.append({"role": "assistant", "content": reply})
 
@@ -929,33 +918,32 @@ else:
             left_col, right_col = st.columns([1, 1], gap="large")
 
             with left_col:
-                tab_pdf, tab_data = st.tabs(["📄 Original PDF", "📋 Extracted Profile"])
+                tab_pdf, tab_data = st.tabs([t("detail.tab_pdf"), t("detail.tab_profile")])
                 with tab_pdf:
                     render_pdf(pdf_path, height=520)
                 with tab_data:
                     if profile:
                         render_profile(profile)
                     else:
-                        st.info("No profile data yet — process the CV first.")
+                        st.info(t("detail.no_profile"))
 
                 # ── SmartCV Assessor (compact, below PDF) ─────────────────
                 if _assessor_available:
                     hdr_l, hdr_r = st.columns([3, 1])
                     with hdr_l:
                         st.markdown(
-                            "<div style='margin-top:24px;margin-bottom:8px;'>"
-                            "<p style='font-size:1.3rem;font-weight:800;letter-spacing:1px;"
-                            "text-transform:uppercase;margin:0;color:#A100FF;'>"
-                            "SmartCV Assessor</p>"
-                            "<p style='color:#9CA3AF;font-size:0.85rem;margin:4px 0 10px 0;'>"
-                            "Ask why a match is low or how to improve your profile."
-                            "</p>"
+                            f"<div style='margin-top:24px;margin-bottom:8px;'>"
+                            f"<p style='font-size:1.3rem;font-weight:800;letter-spacing:1px;"
+                            f"text-transform:uppercase;margin:0;color:#A100FF;'>"
+                            f"{t('assessor.title')}</p>"
+                            f"<p style='color:#9CA3AF;font-size:0.85rem;margin:4px 0 10px 0;'>"
+                            f"{t('assessor.desc')}</p>"
                             "</div>",
                             unsafe_allow_html=True,
                         )
                     with hdr_r:
                         st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-                        if st.button("⛶ Full screen", use_container_width=True, key="btn_fullscreen"):
+                        if st.button(t("assessor.expand"), use_container_width=True, key="btn_fullscreen"):
                             st.session_state.chat_fullscreen = True
                             st.rerun()
 
@@ -963,7 +951,7 @@ else:
                         with st.chat_message(msg["role"]):
                             st.write(msg["content"])
 
-                    if user_input := st.chat_input("Ask the assessor…", key="advisor_input"):
+                    if user_input := st.chat_input(t("assessor.placeholder"), key="advisor_input"):
                         st.session_state.advisor_history.append({"role": "user", "content": user_input})
                         with st.chat_message("user"):
                             st.write(user_input)
@@ -972,7 +960,7 @@ else:
                                 try:
                                     reply = advisor_respond(user_input, st.session_state.advisor_history[:-1], _system_prompt)
                                 except Exception as e:
-                                    reply = f"Could not connect to Ollama: {e}"
+                                    reply = t("assessor.error", err=e)
                             st.write(reply)
                         st.session_state.advisor_history.append({"role": "assistant", "content": reply})
 
