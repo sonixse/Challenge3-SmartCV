@@ -23,6 +23,13 @@ from src.config import (
 )
 
 
+# Module-level client with a real per-request timeout. The underlying httpx
+# client used by `ollama.Client` enforces this on every HTTP call, so a stuck
+# Ollama generation aborts at OLLAMA_TIMEOUT seconds instead of hanging the
+# whole future. Thread-safe — shared across the Detective worker pool.
+_CLIENT = ollama.Client(timeout=OLLAMA_TIMEOUT)
+
+
 class DetectiveVerdict(BaseModel):
     classification: Literal["MATCH", "NO MATCH"]  # binary — never GREY ZONE
     evidence: str    # exact quote from CV, or "No evidence found"
@@ -70,11 +77,20 @@ def _resolve_one(
     """One Ollama call (with retries) for a single grey-zone skill."""
     context   = _relevant_context(skill, raw_text, [best_match] if best_match else None)
     user_msg  = f'Skill to evaluate: "{skill}"\n\nCV text:\n{context}'
+    sys_chars   = len(_SYSTEM_PROMPT)
+    user_chars  = len(user_msg)
+    ctx_chars   = len(context)
+    print(
+        f"[detective.debug] PROMPT skill='{skill}' sys={sys_chars}c user={user_chars}c "
+        f"context={ctx_chars}c total≈{sys_chars+user_chars}c (~{(sys_chars+user_chars)//4} tok)",
+        flush=True,
+    )
     last_exc: Exception | None = None
 
     for attempt in range(1, MAX_RETRIES + 1):
+        t_call = time.time()
         try:
-            response = ollama.chat(
+            response = _CLIENT.chat(
                 model=model,
                 messages=[
                     {"role": "system", "content": _SYSTEM_PROMPT},
@@ -84,19 +100,54 @@ def _resolve_one(
                 options={"temperature": 0},
             )
             content = response["message"]["content"].strip()
+            raw_preview = content.replace("\n", " ")[:200]
+            print(
+                f"[detective.debug] RAW skill='{skill}' attempt={attempt} len={len(content)} "
+                f"content='{raw_preview}'",
+                flush=True,
+            )
             data = json.loads(content)
-            return DetectiveVerdict.model_validate(data)
+            verdict = DetectiveVerdict.model_validate(data)
+            if verdict.classification == "NO MATCH":
+                ev = (verdict.evidence or "").replace("\n", " ")[:140]
+                rs = (verdict.reasoning or "").replace("\n", " ")[:140]
+                print(
+                    f"[detective.debug] NO_MATCH skill='{skill}' evidence='{ev}' reasoning='{rs}'",
+                    flush=True,
+                )
+            return verdict
 
         except (json.JSONDecodeError, ValidationError) as e:
             last_exc = e
+            print(
+                f"[detective.debug] PARSE_ERR skill='{skill}' attempt={attempt} "
+                f"type={type(e).__name__} msg='{str(e)[:140]}'",
+                flush=True,
+            )
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY * (2 ** (attempt - 1)))
 
         except Exception as e:
             last_exc = e
+            elapsed = time.time() - t_call
+            # Distinguish HTTP/read timeouts (httpx.ReadTimeout, TimeoutException, ...)
+            # from generic connection errors — they call for different retry policies.
+            type_name = type(e).__name__
+            is_timeout = "Timeout" in type_name or elapsed >= OLLAMA_TIMEOUT * 0.9
+            tag = "TIMEOUT" if is_timeout else "CONN_ERR"
+            print(
+                f"[detective.debug] {tag} skill='{skill}' attempt={attempt} "
+                f"elapsed={elapsed:.1f}s type={type_name} msg='{str(e)[:140]}'",
+                flush=True,
+            )
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY * (2 ** attempt))
 
+    print(
+        f"[detective.debug] FALLBACK skill='{skill}' last_exc={type(last_exc).__name__ if last_exc else None}: "
+        f"'{str(last_exc)[:200] if last_exc else ''}'",
+        flush=True,
+    )
     return DetectiveVerdict(
         classification="NO MATCH",
         evidence="Parse failed after retries",
@@ -144,26 +195,17 @@ def resolve(
         }
         for future in as_completed(futures):
             skill = futures[future]
-            t_skill = time.time()
-            try:
-                verdicts[skill] = future.result(timeout=OLLAMA_TIMEOUT)
-                done += 1
-                print(
-                    f"[detective]   [{done}/{total}] '{skill}' → {verdicts[skill].classification} "
-                    f"(elapsed={time.time()-t_start:.1f}s)",
-                    flush=True,
-                )
-            except TimeoutError:
-                done += 1
-                print(
-                    f"[detective]   [{done}/{total}] '{skill}' → TIMEOUT after {OLLAMA_TIMEOUT}s",
-                    flush=True,
-                )
-                verdicts[skill] = DetectiveVerdict(
-                    classification="NO MATCH",
-                    evidence="Ollama call timed out",
-                    reasoning=f"No response within {OLLAMA_TIMEOUT}s",
-                )
+            # No timeout on future.result(): the real per-request timeout is
+            # enforced by the ollama Client (httpx). When that fires, _resolve_one
+            # handles the exception and the future returns normally with a
+            # NO MATCH fallback — never raises here.
+            verdicts[skill] = future.result()
+            done += 1
+            print(
+                f"[detective]   [{done}/{total}] '{skill}' → {verdicts[skill].classification} "
+                f"(elapsed={time.time()-t_start:.1f}s)",
+                flush=True,
+            )
 
     resolved_match    = sum(1 for v in verdicts.values() if v.classification == "MATCH")
     resolved_no_match = sum(1 for v in verdicts.values() if v.classification == "NO MATCH")
