@@ -104,30 +104,45 @@ def _experience_axis(
 ) -> tuple[int, bool, list[str]]:
     """Return (penalty, eliminate, flags) for the experience axis.
 
-    Rationale:
-      Inside [min, max]                 -> 0
-      Over max                           -> 0 + overqualified flag (never penalize up)
-      gap <= 1 year                      -> 5  (close enough, soft penalty)
-      gap > 1 and not extreme            -> 12 (significant shortfall)
-      years < min - max(2, 0.5*min)      -> ELIMINATE (extreme shortfall)
+    Underqualification (existing):
+        years < min − max(2, 0.5·min)   -> ELIMINATE  (extreme shortfall)
+        gap <= 1 year                   -> 5          (close, soft penalty)
+        gap > 1 and not extreme         -> 12         (significant shortfall)
+
+    Overqualification (ratio years / max(exp_min, 1)):
+        ratio <= 1.5                    -> 0          (reasonable fit)
+        1.5 < ratio <= 2.5              -> 4          (slightly over)
+        2.5 < ratio <= 4.0              -> 8          (clearly over)
+        ratio > 4.0                     -> 12         (large mismatch)
+    Overqualification never eliminates — a senior stays eligible for a
+    junior role, but the score reflects the mismatch so the rol-appropriate
+    candidates surface first.  `exp_max` is no longer used (kept in the
+    signature for API compatibility).
     """
     flags: list[str] = []
 
-    if years > exp_max and exp_max > 0:
-        flags.append("overqualified_experience")
+    # Underqualification (unchanged)
+    if years < exp_min:
+        elim_threshold = exp_min - max(2.0, 0.5 * exp_min)
+        if years < elim_threshold:
+            flags.append("experience_gap_critical")
+            return 0, True, flags
+        gap = exp_min - years
+        if gap <= 1:
+            return 5, False, flags
+        return 12, False, flags
+
+    # At or above min — measure overqualification by ratio.
+    # max(exp_min, 1) avoids division by zero when an offer has no minimum.
+    ratio = years / max(exp_min, 1)
+    if ratio <= 1.5:
         return 0, False, flags
 
-    if years >= exp_min:
-        return 0, False, flags
-
-    gap = exp_min - years
-    elim_threshold = exp_min - max(2.0, 0.5 * exp_min)
-    if years < elim_threshold:
-        flags.append("experience_gap_critical")
-        return 0, True, flags
-
-    if gap <= 1:
-        return 5, False, flags
+    flags.append("overqualified_experience")
+    if ratio <= 2.5:
+        return 4, False, flags
+    if ratio <= 4.0:
+        return 8, False, flags
     return 12, False, flags
 
 
