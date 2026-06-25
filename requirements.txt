@@ -1,13 +1,12 @@
 # frameworks, libraries, and models
 gradio
 streamlit
-groq
 python-dotenv
 pydantic
 langgraph
 chromadb
 
-# for BGE embeddings
+# embeddings
 sentence-transformers
 
 # .pdf text extraction

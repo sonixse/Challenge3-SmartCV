@@ -84,15 +84,15 @@ Tool:   Deterministic rule engine (Python)
 ### 🟢 ALAN TURING — The Linguist Agent
 *Alan Turing asked whether machines could understand meaning. This agent is the answer.*
 
-The Linguist Agent performs semantic skills comparison: it converts every required skill from the vacancy into an embedding vector and compares them against the candidate's skill vectors stored in **ChromaDB**. To generate these vectors, we use **BGE** (a pre-trained open-source AI model from HuggingFace — think of it as the component that reads a piece of text and converts it into a list of numbers that represents its *meaning*. Skills that mean similar things end up as similar numbers). Cosine similarity produces three categories:
+The Linguist Agent performs semantic skills comparison: it converts every required skill from the vacancy into an embedding vector and compares them against the candidate's skill vectors stored in **ChromaDB**. To generate these vectors, we use **`intfloat/multilingual-e5-base`** — a pre-trained open-source multilingual embedding model from HuggingFace. Think of it as a component that reads a piece of text and converts it into a list of numbers representing its *meaning*. Skills that mean similar things end up as similar numbers. Cosine similarity produces three categories:
 
 | Category | Threshold | Meaning |
 |----------|-----------|---------|
-| ✅ MATCH | > 0.85 | Semantically equivalent ("PySpark" ≈ "distributed data processing") |
-| ⚠️ GREY ZONE | 0.60 – 0.85 | Possibly related — needs reasoning |
-| ❌ NO MATCH | < 0.60 | Not covered |
+| ✅ MATCH | > 0.87 | Semantically equivalent ("PySpark" ≈ "distributed data processing") |
+| ⚠️ GREY ZONE | 0.84 – 0.87 | Possibly related — needs reasoning |
+| ❌ NO MATCH | < 0.84 | Not covered |
 
-> **On thresholds:** The values 0.85 and 0.60 are heuristic starting points, informed by common practice in semantic similarity tasks. We adjust them based on three signals: (1) **false positives** — if clearly unrelated skills are landing in MATCH, we raise the upper threshold; (2) **false negatives** — if obviously equivalent skills like "Python" vs "Python 3" are falling into GREY ZONE instead of MATCH, we lower it; (3) **grey zone volume** — if too many skills end up in GREY ZONE, The Detective Agent becomes a bottleneck and slows the system down, so we tune the boundaries until the grey zone catches only genuinely ambiguous cases. The goal is a grey zone that is small, meaningful, and worth the cost of calling an LLM.
+> **On thresholds:** The values 0.87 and 0.84 are heuristic starting points, informed by common practice in semantic similarity tasks. They are defined in `src/config.py` (`LINGUIST_MATCH_THRESHOLD` and `LINGUIST_GREY_THRESHOLD`) and can be tuned without touching any other file. We adjust them based on three signals: (1) **false positives** — if clearly unrelated skills are landing in MATCH, we raise the upper threshold; (2) **false negatives** — if obviously equivalent skills like "Python" vs "Python 3" are falling into GREY ZONE, we lower it; (3) **grey zone volume** — if too many skills end up in GREY ZONE, the Detective becomes a bottleneck, so we tune until the grey zone catches only genuinely ambiguous cases.
 
 ```
 Input:  Candidate skills + Vacancy skill requirements
@@ -153,14 +153,12 @@ Tool:   LLM with structured output
 ### 🏆 JOHANNES GUTENBERG — The Publisher Agent
 *Johannes Gutenberg invented the printing press — the original act of making information displayable and accessible to the masses. Johannes Gutenberg turns the pipeline's output into something a human can actually read and act on.*
 
-The Publisher Agent handles results and display: it persists all results to **SQLite** — including the analysis results, the vacancy descriptions, and the submitted CV profile — structures the output for the interface, and drives what the candidate actually sees: the ranked list, the per-skill breakdown, and the Steve Jobs coaching output — all rendered in a clean **Gradio** interface.
-
-> **Why Gradio over Streamlit?** Gradio is HuggingFace-native, has first-class support for file uploads, chat-style output, and model demo UX. Since we're using BGE (our open-source embedding model) from HuggingFace and the Coach output is conversational, Gradio's component set fits this use case more naturally than Streamlit's data-dashboard paradigm.
+The Publisher Agent handles results and display: it persists all results to **SQLite** — including the analysis results, the vacancy descriptions, and the submitted CV profile — structures the output for the interface, and drives what the candidate actually sees: the ranked list, the per-skill breakdown, and the Steve Jobs coaching output — all rendered in a custom **Streamlit** interface.
 
 ```
 Input:  Final ranked results + coaching output
-Output: Rendered Gradio interface for the candidate
-Tool:   SQLite + Gradio
+Output: Rendered Streamlit interface for the candidate
+Tool:   SQLite + Streamlit
 ```
 
 ---
@@ -169,7 +167,7 @@ Tool:   SQLite + Gradio
 
 ```
                         ┌─────────────────────┐
-                        │   Gradio Interface  │
+                        │ Streamlit Interface │
                         │  (candidate uploads │
                         │     CV as PDF)      │
                         └──────────┬──────────┘
@@ -218,7 +216,7 @@ Tool:   SQLite + Gradio
                         ┌──────────▼──────────┐
                         │   🏆 JOHANNES GUTENBERG     │
                         │ The Publisher Agent │
-                        │  SQLite + Gradio    │
+                        │ SQLite + Streamlit  │
                         └─────────────────────┘
 ```
 
@@ -233,7 +231,7 @@ Tool:   SQLite + Gradio
 | 🟡 | Hedy Lamarr | LLM Agent — Chain-of-thought |
 | 🔴 | Serena Williams | Deterministic — Scoring formula |
 | 🟤 | Steve Jobs | LLM Agent — Gap analysis |
-| 🏆 | Johannes Gutenberg | Deterministic — SQLite + Gradio |
+| 🏆 | Johannes Gutenberg | Deterministic — SQLite + Streamlit |
 
 ---
 
@@ -243,11 +241,11 @@ Tool:   SQLite + Gradio
 |-----------|------|--------|
 | Orchestration | LangGraph | Stateful, conditional agent graph — not a fixed pipeline |
 | LLM | Llama 3 (Ollama) | Open source, local, zero API cost |
-| Embedding model | **BGE** (BAAI/bge-base-en-v1.5) | Open-source AI model that converts text into meaning-vectors. Pre-trained by HuggingFace — we use it off the shelf, no training required. Top-ranked for semantic search tasks. |
+| Embedding model | **`intfloat/multilingual-e5-base`** | Open-source multilingual embedding model. Converts text into meaning-vectors — skills that mean similar things end up as similar numbers. Handles English, Spanish, Catalan, and more without preprocessing. Used off the shelf, no training required. |
 | Vector DB | ChromaDB | Nearest-neighbor search native, file-local, zero server |
 | Relational DB | SQLite | Stores analysis results, scores, vacancy descriptions, and submitted CV profiles |
 | Data validation | Pydantic | Structured, typed output from LLM agents |
-| Frontend | Gradio | HuggingFace-native, chat + file upload UX, ideal for AI demos |
+| Frontend | Streamlit | Custom dark UI, 7-language i18n, semantic ranking view |
 
 ---
 
@@ -258,46 +256,100 @@ Tool:   SQLite + Gradio
 
 ---
 
-## Prerequisites
+## Getting Started — Reproduce This Project
 
-This project runs the LLM **locally** via [Ollama](https://ollama.com). No external API key is needed — but Ollama must be installed and running on your machine before you launch the app.
+Everything you need to run SmartCV locally, from zero to a working app.
 
-1. **Install Ollama** — download from [ollama.com](https://ollama.com) and follow the instructions for your OS.
-2. **Pull the model** (one-time):
-   ```bash
-   ollama pull llama3
-   ```
-3. **Start the server** — Ollama must be running in the background whenever you use the app:
-   ```bash
-   ollama serve
-   ```
+### 1. Requirements
 
-> The app connects to Ollama at `localhost:11434`. If you see a connection error on startup, this is the first thing to check.
+| Requirement | Version / Notes |
+|---|---|
+| Python | 3.10 or higher |
+| RAM | 8 GB minimum (16 GB recommended for smooth LLM inference) |
+| Disk | ~5 GB free (model weights + ChromaDB index) |
+| OS | Linux, macOS, or Windows (WSL2 recommended on Windows) |
 
 ---
 
-## How to Run
+### 2. Clone and install dependencies
 
 ```bash
-# 1. Clone and install
 git clone https://github.com/sonixse/Challenge3-SmartCV
 cd Challenge3-SmartCV
 pip install -r requirements.txt
-
-# 2. Start Ollama in a separate terminal (see Prerequisites above)
-ollama serve
-
-# 3. Index the job vacancies into ChromaDB (run once)
-python scripts/index_vacancies.py
-
-# 4. Launch the interface
-python app.py
 ```
 
-Upload a CV (PDF). In seconds:
-- Top-ranked job matches with compatibility scores
+---
+
+### 3. Install Ollama and pull the LLM
+
+The agents that use a language model (Ada Lovelace, Hedy Lamarr, Steve Jobs) run **locally** via [Ollama](https://ollama.com). No API key needed.
+
+```bash
+# a) Install Ollama — download from https://ollama.com for your OS
+
+# b) Pull the model (one-time, ~4 GB download)
+ollama pull llama3
+
+# c) Start the Ollama server (keep this terminal open)
+ollama serve
+```
+
+> If you see a connection error when launching the app, Ollama is not running. Start it with `ollama serve` first.
+
+---
+
+### 4. Index the job vacancies into ChromaDB
+
+Alan Turing (Linguist) uses ChromaDB + BGE embeddings to do semantic skill matching. You need to index the vacancy data **once** before the first run.
+
+```bash
+python scripts/index_vacancies.py
+```
+
+This creates the vector index in `data/chroma/`. You only need to run this once (or again if the vacancy data changes).
+
+---
+
+### 5. Launch the app
+
+```bash
+streamlit run app.py
+```
+
+Open your browser at `http://localhost:8501`, upload a CV in PDF format, and click **Show Ranking**.
+
+---
+
+### Checklist before launching
+
+- [ ] `pip install -r requirements.txt` completed
+- [ ] `ollama pull llama3` completed (one-time, ~4 GB)
+- [ ] `ollama serve` is running in a separate terminal
+- [ ] `python scripts/index_vacancies.py` ran without errors
+
+---
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Cannot connect to Ollama` | `ollama serve` not running | Run it in a separate terminal |
+| `index_vacancies.py` fails | ChromaDB path missing | The script creates `data/chroma/` automatically; check write permissions |
+| First run is slow (~30 s) | `intfloat/multilingual-e5-base` downloading | One-time download (~500 MB); subsequent runs use the cached model |
+| `streamlit: command not found` | Streamlit not installed | Re-run `pip install -r requirements.txt` |
+| 0 matches for a CV | All offers eliminated by Qualifier | Check that the CV's language names are in English (e.g. "Spanish", not "Español") |
+
+> The LangGraph pipeline lives in `src/orchestrator/graph.py`. Agent thresholds and weights are in `src/config.py`.
+
+---
+
+## How to Use the App
+
+Once running, upload any CV in PDF format and click **Show Ranking**. In seconds you get:
+- Top-ranked job matches with semantic compatibility scores
 - Per-skill breakdown: MATCH / GREY ZONE (with Lamarr's reasoning) / NO MATCH
-- Jobs' personalized gap analysis and development roadmap
+- Personalized gap analysis and coaching from the SmartCV Assessor
 
 ---
 
@@ -318,7 +370,7 @@ The constraint was clear: no pre-built agents. Here is how we comply — and go 
 Semantic embeddings + a conditional reasoning layer (Lamarr) + a personalized career coaching agent (Steve Jobs). Most CV tools do keyword matching. We do semantic understanding with explainability and a development roadmap. The agent naming is not decoration — it's a communication strategy that makes the architecture instantly memorable.
 
 **2. Feasibility & Scalability**
-Every component is production-realistic. ChromaDB scales to millions of vectors. BGE (our embedding model) is fast enough for real-time queries. SQLite swaps to PostgreSQL with one config change. The Gradio interface becomes a REST API endpoint. The LangGraph orchestrator pattern works at any scale.
+Every component is production-realistic. ChromaDB scales to millions of vectors. BGE (our embedding model) is fast enough for real-time queries. SQLite swaps to PostgreSQL with one config change. The Streamlit app can be containerised and served behind a reverse proxy. The LangGraph orchestrator pattern works at any scale.
 
 **3. Clarity & Conciseness**
 One agent, one job. The architecture is legible: you can point at any node and explain what it does, why it's there, and why it uses the tool it uses. The conditional branching is a single decision point (grey zones exist?).
