@@ -11,6 +11,7 @@ from src.orchestrator.graph import (
 )
 from src.config import MODEL
 
+print("Interpreter agent (Lovelace) output already saved in data/processed/:")
 PROFILE_JSON = "data/processed/01_candidate.json"
 
 start = time.time()
@@ -31,6 +32,7 @@ state = {
 }
 
 # Qualifier
+print("Qualifier agent (Curie) working...")
 state.update(qualifier_node(state))
 print(f"Qualifier pass: {state['qualifier_result']['pass']}")
 kept = sum(1 for r in state["qualifier_result"]["by_offer"].values() if r["decision"] == "keep")
@@ -38,12 +40,14 @@ print(f"Kept {kept} / {len(vacancies)} vacancies")
 print()
 
 # Linguist
+print("Linguist agent (Turing) working...")
 state.update(linguist_node(state))
 grey_zone = state["linguist_result"].get("grey_zone", [])
-print(f"Grey zone skills ({len(grey_zone)}): {grey_zone[:5]}")
+print(f"Grey zone skills ({len(grey_zone)}): {grey_zone}")
 print()
 
 # Detective (only if grey zone)
+print("Detective agent (Lammar) working...")
 if grey_zone:
     state.update(detective_node(state))
     det = state["detective_result"]
@@ -51,6 +55,7 @@ if grey_zone:
     print()
 
 # Podium
+print("Podium agent (Williams) working...")
 state.update(podium_node(state))
 ranking = state["podium_result"]["ranking"]
 print(f"Podium — top {len(ranking)} offers:")
@@ -59,15 +64,17 @@ for i, e in enumerate(ranking[:5], 1):
 print()
 
 # Visionary
+print("Visionary agent (Jobs) working...")
 state.update(visionary_node(state))
 vr = state["visionary_result"]
 print(f"Best fit: {vr['best_fit_role']} ({vr['best_fit_score']}%)")
-print(f"Top gaps: {[g['skill'] for g in vr['top_gaps'][:3]]}")
-print(f"Strengths: {vr['strengths'][:3]}")
-print(f"Coaching: {vr['coaching'][:300]}")
+print(f"Top gaps: {[g['skill'] for g in vr['top_gaps']]}")
+print(f"Strengths: {vr['strengths']}")
+print(f"Coaching: {vr['coaching']}")
 print()
 
 # Publisher
+print("Publisher agent (Gutenberg) working...")
 state.update(publisher_node(state))
 pub = state["publisher_result"]
 print(f"Saved: run_id={pub['run_id']} | {pub['offers_ranked']} offers | db={pub['db_path']}")
