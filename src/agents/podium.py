@@ -116,13 +116,13 @@ def _reason_language(profile: dict, offer: dict, penalty: int) -> Optional[str]:
 
 
 def _reason_experience(profile: dict, offer: dict, penalty: int, flags: list[str]) -> Optional[str]:
-    """Frase del gap d'experiència. Sobrequalificació no es presenta com a descompte."""
-    if "overqualified_experience" in flags:
-        return None
+    """Frase del gap d'experiència. Diferencia infraqualificació i sobrequalificació."""
     if penalty == 0:
         return None
     years = profile.get("experiencia_anys", 0)
     exp_min = offer.get("experiencia_min", 0)
+    if "overqualified_experience" in flags:
+        return f"Experiència −{penalty} · sobrequalificat ({years:g} anys per una oferta de {exp_min})"
     return f"Experiència −{penalty} · demana {exp_min} anys, tens {years:g}"
 
 

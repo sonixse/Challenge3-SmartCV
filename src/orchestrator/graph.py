@@ -1,4 +1,6 @@
+import re
 import time
+from pathlib import Path
 from typing import TypedDict
 from langgraph.graph import StateGraph, END
 from src.schemas.candidate import CandidateProfile
@@ -58,13 +60,47 @@ def _off_input(vac):
 
 # nodes
 
+def _cache_path_for(pdf_path: Path, processed_dir: Path) -> Path:
+    """Replicate the UI's naming convention so both layers share the disk cache.
+
+    - data/uploads/<stem>.pdf  → data/processed/upload_<stem>_candidate.json
+    - data/raw/<NN>_*.pdf      → data/processed/<NN>_candidate.json
+    - anything else            → data/processed/<stem>_candidate.json
+    """
+    stem = pdf_path.stem
+    if pdf_path.parent.name == "uploads":
+        return processed_dir / f"upload_{stem}_candidate.json"
+    m = re.match(r"(\d+)", pdf_path.name)
+    if m:
+        return processed_dir / f"{m.group(1).zfill(2)}_candidate.json"
+    return processed_dir / f"{stem}_candidate.json"
+
+
 def interpreter_node(state: State) -> dict:
-    from src.agents.interpreter import interpret
+    from src.agents.interpreter import interpret, load_profile, save_profile, DEFAULT_OUTPUT_DIR
     from src.data.load_vacancies import load as load_vacancies
 
     t0 = time.time()
+    pdf_path = Path(state["pdf_path"])
     _log(f"interpreter: START — pdf={state['pdf_path']}")
-    profile = interpret(state["pdf_path"], model=state["model"])
+
+    cache_path = _cache_path_for(pdf_path, Path(DEFAULT_OUTPUT_DIR))
+    profile = None
+    if cache_path.exists():
+        try:
+            profile = load_profile(str(cache_path))
+            _log(f"interpreter: loaded cached profile from {cache_path.name}")
+        except Exception as e:
+            _log(f"interpreter: cache load failed ({e}), will reparse")
+            profile = None
+
+    if profile is None:
+        profile = interpret(state["pdf_path"], model=state["model"])
+        try:
+            save_profile(profile, str(cache_path))
+        except Exception as e:
+            _log(f"interpreter: warning — could not save cache: {e}")
+
     _log(f"interpreter: profile parsed ({len(profile.skills)} skills, {len(profile.languages)} langs)")
     _, vacancies = load_vacancies()
     _log(f"interpreter: DONE in {time.time()-t0:.1f}s — {len(vacancies)} vacancies loaded")
@@ -201,19 +237,30 @@ def podium_node(state: State) -> dict:
     prof = _prof_input(state["candidate"])
 
     entries = []
+    skipped_unanalysed = 0
     for vac in state["vacancies"]:
         vid = str(vac.id)
         q_dict = qualifier_by_offer.get(vid, {})
         if q_dict.get("decision") != "keep":
             continue
-        ling = linguist_by_offer.get(vid, {})
+        # Skip vacancies the Linguist never analysed (outside Chroma top-K):
+        # building entries with score_semantic=0 added noise without affecting
+        # the visible top-N.
+        if vid not in linguist_by_offer:
+            skipped_unanalysed += 1
+            continue
+        ling = linguist_by_offer[vid]
         qres = QualifierResult.model_validate(q_dict)
         entry = build_entry(vac, ling, qres, prof, _off_input(vac))
         if entry is not None:
             entries.append(entry)
 
     entries.sort(key=lambda e: e.score_match, reverse=True)
-    _log(f"podium: DONE in {time.time()-t0:.2f}s — {len(entries)} entries built, top-{PODIUM_TOP_N} returned")
+    _log(
+        f"podium: DONE in {time.time()-t0:.2f}s — {len(entries)} entries built, "
+        f"skipped {skipped_unanalysed} unanalysed (kept by Qualifier but outside Linguist top-K), "
+        f"top-{PODIUM_TOP_N} returned"
+    )
     return {
         "podium_result": {
             "ranking": [e.model_dump() for e in entries[:PODIUM_TOP_N]]
